@@ -1,0 +1,35 @@
+{
+  "name": "glpk.js",
+  "description": "GNU Linear Programming Kit for Javascript",
+  "version": "4.47.0",
+  "homepage": "https://github.com/hgourvest/glpk.js",
+  "author": {
+    "name": "Henri Gourvest",
+    "email": "hgourvest@gmail.com",
+    "url": "https://github.com/hgourvest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/hgourvest/glpk.js"
+  },
+  "bugs": {
+    "url": "https://github.com/hgourvest/glpk.js/issues"
+  },
+  "licenses": [
+    {
+      "type": "GPLv2",
+      "url": "http://www.gnu.org/licenses/old-licenses/gpl-2.0.html"
+    }
+  ],
+  "main": "dist/glpk.js",
+  "engines": {
+    "node": "*"
+  },
+  "scripts": {
+    "test": "grunt test"
+  },
+  "devDependencies": {
+    "grunt": "~0.3.17"
+  },
+  "keywords": []
+}
