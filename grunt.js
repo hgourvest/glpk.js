@@ -15,13 +15,13 @@ module.exports = function(grunt) {
     concat: {
       dist: {
         src: ['<banner:meta.banner>', '<banner:meta.wrap_start>', 'lib/**/*.js', '<banner:meta.wrap_end>'],
-        dest: 'dist/<%= pkg.name %>.js'
+        dest: 'dist/glpk.js'
       }
     },
     min: {
       dist: {
         src: ['<banner:meta.banner>', '<config:concat.dist.dest>'],
-        dest: 'dist/<%= pkg.name %>.min.js'
+        dest: 'dist/glpk.min.js'
       }
     },
     test: {

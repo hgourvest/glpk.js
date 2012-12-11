@@ -37,9 +37,14 @@ test1 = function (){
     var smcp = {};
     glpk.glp_init_smcp(smcp);
     smcp.presolve = glpk.GLP_ON;
-    smcp.pricing = glpk.GLP_PT_STD;
     glpk.glp_simplex(lp, smcp);
-    glpk.glp_intopt(lp, null);
+
+    var iocp = {};
+    glpk.glp_init_iocp(iocp);
+    iocp.presolve = glpk.GLP_ON;
+
+
+    glpk.glp_intopt(lp, iocp);
     console.log("obj: " + glpk.glp_mip_obj_val(lp));
     for( var i = 1; i <= glpk.glp_get_num_cols(lp); i++){
         console.log(glpk.glp_get_col_name(lp, i)  + " = " + glpk.glp_mip_col_val(lp, i));

@@ -1,6 +1,6 @@
-/*! glpk - v4.47.0 - 2012-12-10
+/*! glpk.js - v4.47.0 - 2012-12-12
 * https://github.com/hgourvest/glpk.js
-* Copyright (c) 2012 Henri Gourvest; Licensed GPL */
+* Copyright (c) 2012 Henri Gourvest; Licensed GPLv2 */
 
 (function(exports) {
 
@@ -27,7 +27,7 @@
  ***********************************************************************/
 
 const
-    GLP_DEBUG = true,
+    GLP_DEBUG = false,
     DBL_MAX = Number.MAX_VALUE,
     INT_MAX = 0x7FFFFFFF,
     DBL_EPSILON = 0.22204460492503131E-15,
@@ -15706,6 +15706,8 @@ function npp_add_col(npp){
     col.lb = col.ub = col.coef = 0.0;
     col.ptr = null;
     col.temp = 0;
+    col.ll = {};
+    col.uu = {};
     npp_insert_col(npp, col, 1);
     return col;
 }
