@@ -33,7 +33,7 @@ function readFromFile(lp, filename){
 
 test1 = function (){
     var lp = glpk.glp_create_prob();
-    readFromFile(lp, __dirname + "\\gap.lpt");
+    readFromFile(lp, __dirname + "/gap.lpt");
     var smcp = {};
     glpk.glp_init_smcp(smcp);
     smcp.presolve = glpk.GLP_ON;
