@@ -153,10 +153,12 @@ End
 
     </textarea><br>
     <input type="submit" onclick="run()" />
+    <input type="checkbox" id="mip" checked>MIP</input>
     <pre id="log"/>
 
     <script>
         var logNode = document.getElementById("log");
+        var mip = document.getElementById("mip");
         var log = glp_print_func = function(value){
             logNode.appendChild(document.createTextNode(value + "\n"));
             console.log(value);
@@ -165,12 +167,23 @@ End
             logNode.innerText = "";
             var lp = glp_create_prob();
             glp_read_lp_from_string(lp, null, document.getElementById("source").value);
-            glp_simplex(lp, null);
-            glp_intopt(lp, null);
-            log("obj: " + glp_mip_obj_val(lp));
-            for( var i = 1; i <= glp_get_num_cols(lp); i++){
-                log(glp_get_col_name(lp, i)  + " = " + glp_mip_col_val(lp, i));
+            var smcp = {};
+            glp_init_smcp(smcp);
+            smcp.presolve = GLP_ON;
+            glp_simplex(lp, smcp);
+            if (mip.checked){
+                glp_intopt(lp, null);
+                log("obj: " + glp_mip_obj_val(lp));
+                for( var i = 1; i <= glp_get_num_cols(lp); i++){
+                    log(glp_get_col_name(lp, i)  + " = " + glp_mip_col_val(lp, i));
+                }
+            } else {
+                log("obj: " + glp_get_obj_val(lp));
+                for( var i = 1; i <= glp_get_num_cols(lp); i++){
+                    log(glp_get_col_name(lp, i)  + " = " + glp_get_col_prim (lp, i));
+                }
             }
+
             glp_delete_prob(lp);
         }
     </script>
