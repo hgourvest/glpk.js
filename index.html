@@ -7,7 +7,6 @@
     <meta name="description" content="Glpk.js : GNU Linear Programming Kit for Javascript" />
 
     <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
-    <script src="javascripts/glpk.min.js"></script>
     <title>Glpk.js</title>
   </head>
 
@@ -18,8 +17,7 @@
         <header class="inner">
           <a id="forkme_banner" href="https://github.com/hgourvest/glpk.js">View on GitHub</a>
 
-          <h1 id="project_title">Glpk.js</h1>
-          <h2 id="project_tagline">GNU Linear Programming Kit for Javascript</h2>
+          <h2 id="project_tagline">Glpk.js - GNU Linear Programming Kit for Javascript</h2>
 
             <section id="downloads">
               <a class="zip_download_link" href="https://github.com/hgourvest/glpk.js/zipball/master">Download this project as a .zip file</a>
@@ -31,10 +29,9 @@
     <!-- MAIN CONTENT -->
     
     <div id="main_content_wrap" class="outer">
-      <section id="main_content" class="inner">
-        <h3>Solve a CPLEX problem online</h3>
+    <h3>Solve a CPLEX problem online</h3>
 	
-<textarea id="source" cols="50" rows="10">
+<textarea id="source" cols="100" rows="15">
 \* Objective function *\
 Minimize
 obj: +17 x1_1 +23 x2_1 +16 x3_1 +19 x4_1 +18 x5_1 +21 x1_2 +16 x2_2 +20 x3_2 +19 x4_2 +19 x5_2 +22 x1_3 +21 x2_3 +16 x3_3 +22 x4_3 +15 x5_3 +18 x1_4 +16 x2_4 +25 x3_4 +22 x4_4 +15 x5_4 +24 x1_5 +17 x2_5
@@ -152,43 +149,56 @@ x5_14 x1_15 x2_15 x3_15 x4_15 x5_15
 End
 
     </textarea><br>
-    <input type="submit" onclick="run()" />
-    <input type="checkbox" id="mip" checked>MIP</input>
-    <pre id="log"/>
-
+    <input type="submit" id="go" value=" run " onclick="run()" />
+    <input type="checkbox" id="mip" checked>MIP</input><br>
+    <textarea id="log" cols="100" rows="15"></textarea>
     <script>
+
         var logNode = document.getElementById("log");
         var mip = document.getElementById("mip");
-        var log = glp_print_func = function(value){
-            logNode.appendChild(document.createTextNode(value + "\n"));
-            console.log(value);
-        }
-        function run(){
-            logNode.innerText = "";
-            var lp = glp_create_prob();
-            glp_read_lp_from_string(lp, null, document.getElementById("source").value);
-            var smcp = {};
-            glp_init_smcp(smcp);
-            smcp.presolve = GLP_ON;
-            glp_simplex(lp, smcp);
-            if (mip.checked){
-                glp_intopt(lp, null);
-                log("obj: " + glp_mip_obj_val(lp));
-                for( var i = 1; i <= glp_get_num_cols(lp); i++){
-                    log(glp_get_col_name(lp, i)  + " = " + glp_mip_col_val(lp, i));
-                }
-            } else {
-                log("obj: " + glp_get_obj_val(lp));
-                for( var i = 1; i <= glp_get_num_cols(lp); i++){
-                    log(glp_get_col_name(lp, i)  + " = " + glp_get_col_prim (lp, i));
-                }
-            }
+        var src = document.getElementById("source");
+        var go = document.getElementById("go");
+        var job;
 
-            glp_delete_prob(lp);
+        function log(value){
+            logNode.appendChild(document.createTextNode(value + "\n"));
+            logNode.scrollTop = logNode.scrollHeight;
+        }
+
+        if (navigator.appName == "Microsoft Internet Explorer"){
+            go.disabled = true;
+            log("Internet explorer is not supported")
+        }
+
+        function run(){
+            job = new Worker("javascripts/main.js");
+            job.onmessage = function (e) {
+                var obj = e.data;
+                switch (obj.action){
+                    case 'log':
+                        log(obj.message);
+                        break;
+                    case 'done':
+                        stop();
+                        log(JSON.stringify(obj.result));
+                        break;
+                }
+            };
+
+            logNode.innerHTML = "";
+            go.value = 'stop';
+            go.onclick = stop;
+            job.postMessage({action: 'load', data: src.value, mip: mip.checked});
+        }
+
+        function stop(){
+            job.terminate();
+            job = null;
+            go.value = ' run ';
+            go.onclick = run;
         }
     </script>
 
-      </section>
     </div>
 
     <!-- FOOTER  -->
