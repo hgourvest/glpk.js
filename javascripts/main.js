@@ -14,6 +14,9 @@ self.addEventListener('message', function(e) {
         case 'load':
             lp = glp_create_prob();
             glp_read_lp_from_string(lp, null, obj.data);
+            
+            glp_scale_prob(lp, GLP_SF_AUTO);
+            
             var smcp = {};
             glp_init_smcp(smcp);
             smcp.presolve = GLP_ON;
@@ -21,7 +24,11 @@ self.addEventListener('message', function(e) {
 
             var result = {}, objective, i;
             if (obj.mip){
-                glp_intopt(lp, null);
+                var iocp = {};
+                glp_init_iocp(iocp);
+                iocp.presolve = GLP_ON;
+                glp_intopt(lp, iocp);
+                
                 objective = glp_mip_obj_val(lp);
                 for(i = 1; i <= glp_get_num_cols(lp); i++){
                     result[glp_get_col_name(lp, i)] = glp_mip_col_val(lp, i);
