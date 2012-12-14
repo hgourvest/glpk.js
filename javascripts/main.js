@@ -17,17 +17,17 @@ self.addEventListener('message', function(e) {
             
             glp_scale_prob(lp, GLP_SF_AUTO);
             
-            var smcp = {};
-            glp_init_smcp(smcp);
-            smcp.presolve = GLP_ON;
-            glp_simplex(lp, smcp);
+            //var smcp = {};
+            //glp_init_smcp(smcp);
+            //smcp.presolve = GLP_ON;
+            glp_simplex(lp, null);
 
             var result = {}, objective, i;
             if (obj.mip){
-                var iocp = {};
-                glp_init_iocp(iocp);
-                iocp.presolve = GLP_ON;
-                glp_intopt(lp, iocp);
+                //var iocp = {};
+                //glp_init_iocp(iocp);
+                //iocp.presolve = GLP_ON;
+                glp_intopt(lp, null);
                 
                 objective = glp_mip_obj_val(lp);
                 for(i = 1; i <= glp_get_num_cols(lp); i++){
