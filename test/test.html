@@ -1,6 +1,6 @@
 <html>
 <head>
-<script src="../dist/glpk.min.js"></script>
+<script src="../dist/glpk.js"></script>
 </head>
 <body>
     <textarea id="source" cols="50" rows="10">
@@ -125,13 +125,18 @@ End
     <pre id="log"/>
 
     <script>
-        var logNode = document.getElementById("log");
+        var start;
+	var logNode = document.getElementById("log");
         var log = glp_print_func = function(value){
-            logNode.appendChild(document.createTextNode(value + "\n"));
-            console.log(value);
+            var now = new Date();
+	    var d = (now.getTime() - start.getTime()) / 1000; 
+	    logNode.appendChild(document.createTextNode(value + "\n"));
+            if (d > 60) throw new Error("timeout");
+	    console.log(value);
         }
         function run(){
-            logNode.innerText = "";
+            start = new Date(); 
+	    logNode.innerText = "";
             var lp = glp_create_prob();
             glp_read_lp_from_string(lp, null, document.getElementById("source").value);
 

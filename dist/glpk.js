@@ -1,4 +1,4 @@
-/*! glpk.js - v4.47.0 - 2012-12-12
+/*! glpk.js - v4.47.0 - 2012-12-23
 * https://github.com/hgourvest/glpk.js
 * Copyright (c) 2012 Henri Gourvest; Licensed GPLv2 */
 
@@ -29,6 +29,8 @@
 const
     GLP_DEBUG = false,
     DBL_MAX = Number.MAX_VALUE,
+    DBL_MIN = Number.MIN_VALUE,
+    DBL_DIG = 16,
     INT_MAX = 0x7FFFFFFF,
     DBL_EPSILON = 0.22204460492503131E-15,
     CHAR_BIT = 1;
@@ -104,7 +106,7 @@ function get_env_ptr(){
 
 var glp_version = exports.glp_version = function(){
     return GLP_MAJOR_VERSION + "." + GLP_MINOR_VERSION;
-}
+};
 
 function isspace(c){
     return (" \t\n\v\f\r".indexOf(c) >= 0)
@@ -137,6 +139,8 @@ function strchr(str, c){
 function tolower(c){
     return c.toLowerCase();
 }
+
+
 
 /* glpapi.h */
 
@@ -4004,6 +4008,262 @@ function glp_ios_terminate(tree){
         xprintf("The search is prematurely terminated due to application request");
     tree.stop = 1;
 }
+/* glpapi14.c (processing models in GNU MathProg language) */
+
+var glp_mpl_alloc_wksp = exports.glp_mpl_alloc_wksp = function(){
+    /* allocate the MathProg translator workspace */
+    return mpl_initialize();
+};
+
+var _glp_mpl_init_rand = exports._glp_mpl_init_rand = function (tran, seed){
+    if (tran.phase != 0)
+    xerror("glp_mpl_init_rand: invalid call sequence\n");
+    rng_init_rand(tran.rand, seed);
+};
+
+var glp_mpl_read_model = exports.glp_mpl_read_model = function(tran, name, callback, skip){
+    /* read and translate model section */
+    var ret;
+    if (tran.phase != 0)
+        xerror("glp_mpl_read_model: invalid call sequence");
+    ret = mpl_read_model(tran, name, callback, skip);
+    if (ret == 1 || ret == 2)
+        ret = 0;
+    else if (ret == 4)
+        ret = 1;
+    else
+        xassert(ret != ret);
+    return ret;
+};
+
+var glp_mpl_read_model_from_string = exports.glp_mpl_read_model_from_string = function(tran, name, str, skip){
+    var pos = 0;
+    return glp_mpl_read_model(tran, name,
+        function(){
+            if (pos < str.length){
+                return str[pos++];
+            } else
+                return -1;
+        },
+        skip
+    )
+};
+
+var glp_mpl_read_data = exports.glp_mpl_read_data = function(tran, name, callback){
+    /* read and translate data section */
+    var ret;
+    if (!(tran.phase == 1 || tran.phase == 2))
+        xerror("glp_mpl_read_data: invalid call sequence");
+    ret = mpl_read_data(tran, name, callback);
+    if (ret == 2)
+        ret = 0;
+    else if (ret == 4)
+        ret = 1;
+    else
+        xassert(ret != ret);
+    return ret;
+};
+
+var glp_mpl_read_data_from_string = exports.glp_mpl_read_data_from_string = function(tran, name, str){
+    var pos = 0;
+    return glp_mpl_read_data(tran, name,
+        function(){
+            if (pos < str.length){
+                return str[pos++];
+            } else
+                return -1;
+        }
+    )
+};
+
+var glp_mpl_generate = exports.glp_mpl_generate = function(tran, name, callback){
+    /* generate the model */
+    var ret;
+    if (!(tran.phase == 1 || tran.phase == 2))
+        xerror("glp_mpl_generate: invalid call sequence\n");
+    ret = mpl_generate(tran, name, callback);
+    if (ret == 3)
+        ret = 0;
+    else if (ret == 4)
+        ret = 1;
+    return ret;
+};
+
+var glp_mpl_build_prob = exports.glp_mpl_build_prob = function(tran, prob){
+    /* build LP/MIP problem instance from the model */
+    var m, n, i, j, t, kind, type, len, ind;
+    var lb, ub, val;
+    if (tran.phase != 3)
+        xerror("glp_mpl_build_prob: invalid call sequence\n");
+    /* erase the problem object */
+    glp_erase_prob(prob);
+    /* set problem name */
+    glp_set_prob_name(prob, mpl_get_prob_name(tran));
+    /* build rows (constraints) */
+    m = mpl_get_num_rows(tran);
+    if (m > 0)
+        glp_add_rows(prob, m);
+    for (i = 1; i <= m; i++)
+    {  /* set row name */
+        glp_set_row_name(prob, i, mpl_get_row_name(tran, i));
+        /* set row bounds */
+        type = mpl_get_row_bnds(tran, i, function(l,u){lb=l; ub=u});
+        switch (type)
+        {  case MPL_FR: type = GLP_FR; break;
+            case MPL_LO: type = GLP_LO; break;
+            case MPL_UP: type = GLP_UP; break;
+            case MPL_DB: type = GLP_DB; break;
+            case MPL_FX: type = GLP_FX; break;
+            default: xassert(type != type);
+        }
+        if (type == GLP_DB && Math.abs(lb - ub) < 1e-9 * (1.0 + Math.abs(lb)))
+        {  type = GLP_FX;
+            if (Math.abs(lb) <= Math.abs(ub)) ub = lb; else lb = ub;
+        }
+        glp_set_row_bnds(prob, i, type, lb, ub);
+        /* warn about non-zero constant term */
+        if (mpl_get_row_c0(tran, i) != 0.0)
+            xprintf("glp_mpl_build_prob: row " + mpl_get_row_name(tran, i) + "; constant term " + mpl_get_row_c0(tran, i) + " ignored");
+    }
+    /* build columns (variables) */
+    n = mpl_get_num_cols(tran);
+    if (n > 0)
+        glp_add_cols(prob, n);
+    for (j = 1; j <= n; j++)
+    {  /* set column name */
+        glp_set_col_name(prob, j, mpl_get_col_name(tran, j));
+        /* set column kind */
+        kind = mpl_get_col_kind(tran, j);
+        switch (kind)
+        {  case MPL_NUM:
+            break;
+            case MPL_INT:
+            case MPL_BIN:
+                glp_set_col_kind(prob, j, GLP_IV);
+                break;
+            default:
+                xassert(kind != kind);
+        }
+        /* set column bounds */
+        type = mpl_get_col_bnds(tran, j, function(l,u){lb=l; ub=u});
+        switch (type)
+        {  case MPL_FR: type = GLP_FR; break;
+            case MPL_LO: type = GLP_LO; break;
+            case MPL_UP: type = GLP_UP; break;
+            case MPL_DB: type = GLP_DB; break;
+            case MPL_FX: type = GLP_FX; break;
+            default: xassert(type != type);
+        }
+        if (kind == MPL_BIN)
+        {  if (type == GLP_FR || type == GLP_UP || lb < 0.0) lb = 0.0;
+            if (type == GLP_FR || type == GLP_LO || ub > 1.0) ub = 1.0;
+            type = GLP_DB;
+        }
+        if (type == GLP_DB && Math.abs(lb - ub) < 1e-9 * (1.0 + Math.abs(lb)))
+        {  type = GLP_FX;
+            if (Math.abs(lb) <= Math.abs(ub)) ub = lb; else lb = ub;
+        }
+        glp_set_col_bnds(prob, j, type, lb, ub);
+    }
+    /* load the constraint matrix */
+    ind = new Array(1+n);
+    val = new Array(1+n);
+    for (i = 1; i <= m; i++)
+    {  len = mpl_get_mat_row(tran, i, ind, val);
+        glp_set_mat_row(prob, i, len, ind, val);
+    }
+    /* build objective function (the first objective is used) */
+    for (i = 1; i <= m; i++)
+    {  kind = mpl_get_row_kind(tran, i);
+        if (kind == MPL_MIN || kind == MPL_MAX)
+        {  /* set objective name */
+            glp_set_obj_name(prob, mpl_get_row_name(tran, i));
+            /* set optimization direction */
+            glp_set_obj_dir(prob, kind == MPL_MIN ? GLP_MIN : GLP_MAX);
+            /* set constant term */
+            glp_set_obj_coef(prob, 0, mpl_get_row_c0(tran, i));
+            /* set objective coefficients */
+            len = mpl_get_mat_row(tran, i, ind, val);
+            for (t = 1; t <= len; t++)
+                glp_set_obj_coef(prob, ind[t], val[t]);
+            break;
+        }
+    }
+};
+
+var glp_mpl_postsolve = exports.glp_mpl_postsolve = function(tran, prob, sol){
+    /* postsolve the model */
+    var i, j, m, n, stat, ret;
+    var prim, dual;
+    if (!(tran.phase == 3 && !tran.flag_p))
+        xerror("glp_mpl_postsolve: invalid call sequence");
+    if (!(sol == GLP_SOL || sol == GLP_IPT || sol == GLP_MIP))
+        xerror("glp_mpl_postsolve: sol = " + sol + "; invalid parameter");
+    m = mpl_get_num_rows(tran);
+    n = mpl_get_num_cols(tran);
+    if (!(m == glp_get_num_rows(prob) &&
+        n == glp_get_num_cols(prob)))
+        xerror("glp_mpl_postsolve: wrong problem object\n");
+    if (!mpl_has_solve_stmt(tran))
+      return 0;
+    for (i = 1; i <= m; i++)
+    {  if (sol == GLP_SOL)
+    {  stat = glp_get_row_stat(prob, i);
+        prim = glp_get_row_prim(prob, i);
+        dual = glp_get_row_dual(prob, i);
+    }
+    else if (sol == GLP_IPT)
+    {  stat = 0;
+        prim = glp_ipt_row_prim(prob, i);
+        dual = glp_ipt_row_dual(prob, i);
+    }
+    else if (sol == GLP_MIP)
+    {  stat = 0;
+        prim = glp_mip_row_val(prob, i);
+        dual = 0.0;
+    }
+    else
+        xassert(sol != sol);
+        if (Math.abs(prim) < 1e-9) prim = 0.0;
+        if (Math.abs(dual) < 1e-9) dual = 0.0;
+        mpl_put_row_soln(tran, i, stat, prim, dual);
+    }
+    for (j = 1; j <= n; j++)
+    {  if (sol == GLP_SOL)
+    {  stat = glp_get_col_stat(prob, j);
+        prim = glp_get_col_prim(prob, j);
+        dual = glp_get_col_dual(prob, j);
+    }
+    else if (sol == GLP_IPT)
+    {  stat = 0;
+        prim = glp_ipt_col_prim(prob, j);
+        dual = glp_ipt_col_dual(prob, j);
+    }
+    else if (sol == GLP_MIP)
+    {  stat = 0;
+        prim = glp_mip_col_val(prob, j);
+        dual = 0.0;
+    }
+    else
+        xassert(sol != sol);
+        if (Math.abs(prim) < 1e-9) prim = 0.0;
+        if (Math.abs(dual) < 1e-9) dual = 0.0;
+        mpl_put_col_soln(tran, j, stat, prim, dual);
+    }
+    ret = mpl_postsolve(tran);
+    if (ret == 3)
+        ret = 0;
+    else if (ret == 4)
+        ret = 1;
+    return ret;
+};
+
+var glp_mpl_free_wksp = exports.glp_mpl_free_wksp = function(tran){
+    /* free the MathProg translator workspace */
+    mpl_terminate(tran);
+};
+
+
 
 /* return codes: */
 const
@@ -7016,7 +7276,7 @@ function ios_round_bound(tree, bound){
             if (col.kind != GLP_IV) return bound;
             if (col.coef != Math.floor(col.coef)) return bound;
             if (Math.abs(col.coef) <= INT_MAX)
-                c[++nn] = Math.abs(col.coef);
+                c[++nn] = Math.abs(col.coef)|0;
             else
                 d = 1;
         }
@@ -8336,7 +8596,7 @@ function ios_driver(T){
                 if (T.head == null)
                 {  if (T.parm.msg_lev >= GLP_MSG_DBG)
                     xprintf("Active list is empty!");
-                    //xassert(dmp_in_use(T.pool).lo == 0);
+                    //xassert(Object.keys(T.pool).length == 0);
                     ret = 0;
                     goto = done; break;
                 }
@@ -11057,7 +11317,7 @@ function lpx_clique_cut(lp, cog, ind, val){
     for (t = 1; t <= cog.nb; t++)
     {  j = cog.orig[t];
         x = lpx_get_col_prim(lp, j);
-        temp = (100.0 * x + 0.5);
+        temp = (100.0 * x + 0.5)|0;
         if (temp < 0) temp = 0;
         if (temp > 100) temp = 100;
         w[t] = temp;
@@ -12521,6 +12781,81 @@ function round2n(x){
     return Math.pow(2, f <= 0.75 ? e-1 : e);
 }
 
+/*  0 - no error;
+ *  1 - value out of range;
+ *  2 - character string is syntactically incorrect.
+ */
+function str2num(str, callback){
+    var ret = Number(str);
+    if (Number.isNaN(ret)) return 2;
+    switch (ret){
+        case Number.POSITIVE_INFINITY:
+        case Number.NEGATIVE_INFINITY:
+            return 1;
+        default:
+            callback(ret);
+            return 0;
+    }
+}
+
+function str2int(str, callback){
+    var ret = Number(str);
+    if (Number.isNaN(ret)) return 2;
+    switch (ret){
+        case Number.POSITIVE_INFINITY:
+        case Number.NEGATIVE_INFINITY:
+            return 1;
+        default:
+            if (ret % 1 == 0){
+                callback(ret);
+                return 0;
+            } else {
+                return 2
+            }
+    }
+}
+
+function jday(d, m, y){
+    var c, ya, j, dd;
+    if (!(1 <= d && d <= 31 && 1 <= m && m <= 12 && 1 <= y && y <= 4000))
+        return -1;
+    if (m >= 3)m -= 3;else{m += 9;y--;}
+    c = (y / 100)|0;
+    ya = y - 100 * c;
+    j = ((146097 * c) / 4)|0;
+    j += ((1461 * ya) / 4)|0;
+    j += ((153 * m + 2) / 5)|0;
+    j += d + 1721119;
+    jdate(j, function(d){dd = d});
+    if (d != dd) j = -1;
+    return j;
+}
+
+function jdate(j, callback)
+{
+    var d, m, y, ret = 0;
+    if (!(1721426 <= j && j <= 3182395))
+      return 1;
+    j -= 1721119;
+    y = ((4 * j - 1) / 146097)|0;
+    j = (4 * j - 1) % 146097;
+    d = (j / 4)|0;
+    j = ((4 * d + 3) / 1461)|0;
+    d = (4 * d + 3) % 1461;
+    d = ((d + 4) / 4)|0;
+    m = ((5 * d - 3) / 153)|0;
+    d = (5 * d - 3) % 153;
+    d = ((d + 5) / 5)|0;
+    y = 100 * y + j;
+    if (m <= 9)
+        m += 3;
+    else{
+        m -= 9; y++;
+    }
+    callback(d, m, y);
+    return ret;
+}
+
 /* return codes: */
 const
     LPF_ESING    = 1;  /* singular matrix */
@@ -13273,11 +13608,9 @@ function fill_smcp(lp, parm){
     if (lpx_get_real_parm(lp, LPX_K_TMLIM) < 0.0)
         parm.tm_lim = INT_MAX;
     else
-        parm.tm_lim =
-            (1000.0 * lpx_get_real_parm(lp, LPX_K_TMLIM));
+        parm.tm_lim = (1000.0 * lpx_get_real_parm(lp, LPX_K_TMLIM))|0;
     parm.out_frq = lpx_get_int_parm(lp, LPX_K_OUTFRQ);
-    parm.out_dly =
-        (1000.0 * lpx_get_real_parm(lp, LPX_K_OUTDLY));
+    parm.out_dly = (1000.0 * lpx_get_real_parm(lp, LPX_K_OUTDLY))|0;
     switch (lpx_get_int_parm(lp, LPX_K_PRESOL))
     {  case 0:  parm.presolve = GLP_OFF;      break;
         case 1:  parm.presolve = GLP_ON;       break;
@@ -13648,8 +13981,7 @@ function solve_mip(lp, presolve){
         lpx_get_real_parm(lp, LPX_K_TMLIM) > 1e6)
         parm.tm_lim = INT_MAX;
     else
-        parm.tm_lim =
-            (1000.0 * lpx_get_real_parm(lp, LPX_K_TMLIM));
+        parm.tm_lim = (1000.0 * lpx_get_real_parm(lp, LPX_K_TMLIM))|0;
     parm.mip_gap = lpx_get_real_parm(lp, LPX_K_MIPGAP);
     if (lpx_get_int_parm(lp, LPX_K_USECUTS) & LPX_C_GOMORY)
         parm.gmi_cuts = GLP_ON;
@@ -15546,6 +15878,10323 @@ function luf_a_solve(luf, tr, x){
     }
 }
 
+const
+    MPL_EOF = -1;
+
+const
+    A_BINARY       = 101,   /* something binary */
+    A_CHECK        = 102,   /* check statement */
+    A_CONSTRAINT   = 103,   /* model constraint */
+    A_DISPLAY      = 104,   /* display statement */
+    A_ELEMCON      = 105,   /* elemental constraint/objective */
+    A_ELEMSET      = 106,   /* elemental set */
+    A_ELEMVAR      = 107,   /* elemental variable */
+    A_EXPRESSION   = 108,   /* expression */
+    A_FOR          = 109,   /* for statement */
+    A_FORMULA      = 110,   /* formula */
+    A_INDEX        = 111,   /* dummy index */
+    A_INPUT        = 112,   /* input table */
+    A_INTEGER      = 113,   /* something integer */
+    A_LOGICAL      = 114,   /* something logical */
+    A_MAXIMIZE     = 115,   /* objective has to be maximized */
+    A_MINIMIZE     = 116,   /* objective has to be minimized */
+    A_NONE         = 117,   /* nothing */
+    A_NUMERIC      = 118,   /* something numeric */
+    A_OUTPUT       = 119,   /* output table */
+    A_PARAMETER    = 120,   /* model parameter */
+    A_PRINTF       = 121,   /* printf statement */
+    A_SET          = 122,   /* model set */
+    A_SOLVE        = 123,   /* solve statement */
+    A_SYMBOLIC     = 124,   /* something symbolic */
+    A_TABLE        = 125,   /* data table */
+    A_TUPLE        = 126,   /* n-tuple */
+    A_VARIABLE     = 127;   /* model variable */
+
+const
+    MAX_LENGTH = 100;
+/* maximal length of any symbolic value (this includes symbolic names,
+ numeric and string literals, and all symbolic values that may appear
+ during the evaluation phase) */
+
+const CONTEXT_SIZE = 60;
+/* size of the context queue, in characters */
+
+const OUTBUF_SIZE = 1024;
+/* size of the output buffer, in characters */
+
+const
+    T_EOF          = 201,   /* end of file */
+    T_NAME         = 202,   /* symbolic name (model section only) */
+    T_SYMBOL       = 203,   /* symbol (data section only) */
+    T_NUMBER       = 204,   /* numeric literal */
+    T_STRING       = 205,   /* string literal */
+    T_AND          = 206,   /* and && */
+    T_BY           = 207,   /* by */
+    T_CROSS        = 208,   /* cross */
+    T_DIFF         = 209,   /* diff */
+    T_DIV          = 210,   /* div */
+    T_ELSE         = 211,   /* else */
+    T_IF           = 212,   /* if */
+    T_IN           = 213,   /* in */
+    T_INFINITY     = 214,   /* Infinity */
+    T_INTER        = 215,   /* inter */
+    T_LESS         = 216,   /* less */
+    T_MOD          = 217,   /* mod */
+    T_NOT          = 218,   /* not ! */
+    T_OR           = 219,   /* or || */
+    T_SPTP         = 220,   /* s.t. */
+    T_SYMDIFF      = 221,   /* symdiff */
+    T_THEN         = 222,   /* then */
+    T_UNION        = 223,   /* union */
+    T_WITHIN       = 224,   /* within */
+    T_PLUS         = 225,   /* + */
+    T_MINUS        = 226,   /* - */
+    T_ASTERISK     = 227,   /* * */
+    T_SLASH        = 228,   /* / */
+    T_POWER        = 229,   /* ^ ** */
+    T_LT           = 230,   /* <  */
+    T_LE           = 231,   /* <= */
+    T_EQ           = 232,   /* = == */
+    T_GE           = 233,   /* >= */
+    T_GT           = 234,   /* >  */
+    T_NE           = 235,   /* <> != */
+    T_CONCAT       = 236,   /* & */
+    T_BAR          = 237,   /* | */
+    T_POINT        = 238,   /* . */
+    T_COMMA        = 239,   /* , */
+    T_COLON        = 240,   /* : */
+    T_SEMICOLON    = 241,   /* ; */
+    T_ASSIGN       = 242,   /* := */
+    T_DOTS         = 243,   /* .. */
+    T_LEFT         = 244,   /* ( */
+    T_RIGHT        = 245,   /* ) */
+    T_LBRACKET     = 246,   /* [ */
+    T_RBRACKET     = 247,   /* ] */
+    T_LBRACE       = 248,   /* { */
+    T_RBRACE       = 249,   /* } */
+    T_APPEND       = 250,   /* >> */
+    T_TILDE        = 251,   /* ~ */
+    T_INPUT        = 252;   /* <- */
+
+            /* suffix specified: */
+const
+    DOT_NONE       = 0x00,  /* none     (means variable itself) */
+    DOT_LB         = 0x01,  /* .lb      (lower bound) */
+    DOT_UB         = 0x02,  /* .ub      (upper bound) */
+    DOT_STATUS     = 0x03,  /* .status  (status) */
+    DOT_VAL        = 0x04,  /* .val     (primal value) */
+    DOT_DUAL       = 0x05;  /* .dual    (dual value) */
+
+        /* operation code: */
+const
+    O_NUMBER       = 301,   /* take floating-point number */
+    O_STRING       = 302,   /* take character string */
+    O_INDEX        = 303,   /* take dummy index */
+    O_MEMNUM       = 304,   /* take member of numeric parameter */
+    O_MEMSYM       = 305,   /* take member of symbolic parameter */
+    O_MEMSET       = 306,   /* take member of set */
+    O_MEMVAR       = 307,   /* take member of variable */
+    O_MEMCON       = 308,   /* take member of constraint */
+    O_TUPLE        = 309,   /* make n-tuple */
+    O_MAKE         = 310,   /* make elemental set of n-tuples */
+    O_SLICE        = 311,   /* define domain block (dummy op) */
+      /* 0-ary operations --------------------*/
+    O_IRAND224     = 312,   /* pseudo-random in [0, 2^24-1] */
+    O_UNIFORM01    = 313,   /* pseudo-random in [0, 1) */
+    O_NORMAL01     = 314,   /* gaussian random, mu = 0, sigma = 1 */
+    O_GMTIME       = 315,   /* current calendar time (UTC) */
+        /* unary operations --------------------*/
+    O_CVTNUM       = 316,   /* conversion to numeric */
+    O_CVTSYM       = 317,   /* conversion to symbolic */
+    O_CVTLOG       = 318,   /* conversion to logical */
+    O_CVTTUP       = 319,   /* conversion to 1-tuple */
+    O_CVTLFM       = 320,   /* conversion to linear form */
+    O_PLUS         = 321,   /* unary plus */
+    O_MINUS        = 322,   /* unary minus */
+    O_NOT          = 323,   /* negation (logical "not") */
+    O_ABS          = 324,   /* absolute value */
+    O_CEIL         = 325,   /* round upward ("ceiling of x") */
+    O_FLOOR        = 326,   /* round downward ("floor of x") */
+    O_EXP          = 327,   /* base-e exponential */
+    O_LOG          = 328,   /* natural logarithm */
+    O_LOG10        = 329,   /* common (decimal) logarithm */
+    O_SQRT         = 330,   /* square root */
+    O_SIN          = 331,   /* trigonometric sine */
+    O_COS          = 332,   /* trigonometric cosine */
+    O_ATAN         = 333,   /* trigonometric arctangent */
+    O_ROUND        = 334,   /* round to nearest integer */
+    O_TRUNC        = 335,   /* truncate to nearest integer */
+    O_CARD         = 336,   /* cardinality of set */
+    O_LENGTH       = 337,   /* length of symbolic value */
+        /* binary operations -------------------*/
+    O_ADD          = 338,   /* addition */
+    O_SUB          = 339,   /* subtraction */
+    O_LESS         = 340,   /* non-negative subtraction */
+    O_MUL          = 341,   /* multiplication */
+    O_DIV          = 342,   /* division */
+    O_IDIV         = 343,   /* quotient of exact division */
+    O_MOD          = 344,   /* remainder of exact division */
+    O_POWER        = 345,   /* exponentiation (raise to power) */
+    O_ATAN2        = 346,   /* trigonometric arctangent */
+    O_ROUND2       = 347,   /* round to n fractional digits */
+    O_TRUNC2       = 348,   /* truncate to n fractional digits */
+    O_UNIFORM      = 349,   /* pseudo-random in [a, b) */
+    O_NORMAL       = 350,   /* gaussian random, given mu and sigma */
+    O_CONCAT       = 351,   /* concatenation */
+    O_LT           = 352,   /* comparison on 'less than' */
+    O_LE           = 353,   /* comparison on 'not greater than' */
+    O_EQ           = 354,   /* comparison on 'equal to' */
+    O_GE           = 355,   /* comparison on 'not less than' */
+    O_GT           = 356,   /* comparison on 'greater than' */
+    O_NE           = 357,   /* comparison on 'not equal to' */
+    O_AND          = 358,   /* conjunction (logical "and") */
+    O_OR           = 359,   /* disjunction (logical "or") */
+    O_UNION        = 360,   /* union */
+    O_DIFF         = 361,   /* difference */
+    O_SYMDIFF      = 362,   /* symmetric difference */
+    O_INTER        = 363,   /* intersection */
+    O_CROSS        = 364,   /* cross (Cartesian) product */
+    O_IN           = 365,   /* test on 'x in Y' */
+    O_NOTIN        = 366,   /* test on 'x not in Y' */
+    O_WITHIN       = 367,   /* test on 'X within Y' */
+    O_NOTWITHIN    = 368,   /* test on 'X not within Y' */
+    O_SUBSTR       = 369,   /* substring */
+    O_STR2TIME     = 370,   /* convert string to time */
+    O_TIME2STR     = 371,   /* convert time to string */
+        /* ternary operations ------------------*/
+    O_DOTS         = 372,   /* build "arithmetic" set */
+    O_FORK         = 373,   /* if-then-else */
+    O_SUBSTR3      = 374,   /* substring */
+        /* n-ary operations --------------------*/
+    O_MIN          = 375,   /* minimal value (n-ary) */
+    O_MAX          = 376,   /* maximal value (n-ary) */
+        /* iterated operations -----------------*/
+    O_SUM          = 377,   /* summation */
+    O_PROD         = 378,   /* multiplication */
+    O_MINIMUM      = 379,   /* minimum */
+    O_MAXIMUM      = 380,   /* maximum */
+    O_FORALL       = 381,   /* conjunction (A-quantification) */
+    O_EXISTS       = 382,   /* disjunction (E-quantification) */
+    O_SETOF        = 383,   /* compute elemental set */
+    O_BUILD        = 384;   /* build elemental set */
+
+    /**********************************************************************/
+    /* * *                      SOLVER INTERFACE                      * * */
+    /**********************************************************************/
+const
+    MPL_FR         = 401,   /* free (unbounded) */
+    MPL_LO         = 402,   /* lower bound */
+    MPL_UP         = 403,   /* upper bound */
+    MPL_DB         = 404,   /* both lower and upper bounds */
+    MPL_FX         = 405,   /* fixed */
+    MPL_ST         = 411,   /* constraint */
+    MPL_MIN        = 412,   /* objective (minimization) */
+    MPL_MAX        = 413,   /* objective (maximization) */
+    MPL_NUM        = 421,   /* continuous */
+    MPL_INT        = 422,   /* integer */
+    MPL_BIN        = 423;   /* binary */
+
+function mpl_internal_create_operands(){
+    return {index: {},par: {},set: {},var: {},con: {},arg: {},loop: {}};
+}
+/* glpmpl01.c */
+
+/**********************************************************************/
+/* * *                  PROCESSING MODEL SECTION                  * * */
+/**********************************************************************/
+
+function mpl_internal_enter_context(mpl){
+    var image;
+    if (mpl.token == T_EOF)
+        image = "_|_";
+    else if (mpl.token == T_STRING)
+        image = "'...'";
+    else
+        image = mpl.image;
+    xassert(0 <= mpl.c_ptr && mpl.c_ptr < CONTEXT_SIZE);
+    mpl.context[mpl.c_ptr++] = ' ';
+    if (mpl.c_ptr == CONTEXT_SIZE) mpl.c_ptr = 0;
+    for (var s = 0; s < image.length; s++)
+    {   mpl.context[mpl.c_ptr++] = image[s];
+        if (mpl.c_ptr == CONTEXT_SIZE) mpl.c_ptr = 0;
+    }
+}
+
+function mpl_internal_print_context(mpl){
+    var c;
+    while (mpl.c_ptr > 0)
+    {  mpl.c_ptr--;
+        c = mpl.context[0];
+        xcopyArr(mpl.context, 0, mpl.context, 1, CONTEXT_SIZE-1);
+        mpl.context[CONTEXT_SIZE-1] = c;
+    }
+    xprintf("Context: " + (mpl.context[0] == ' ' ? "" : "...") + mpl.context);
+}
+
+function mpl_internal_get_char(mpl){
+    var c;
+    if (mpl.c == MPL_EOF) return;
+    if (mpl.c == '\n') mpl.line++;
+    c = mpl_internal_read_char(mpl);
+    if (c == MPL_EOF)
+    {  if (mpl.c == '\n')
+        mpl.line--;
+    else
+        mpl_internal_warning(mpl, "final NL missing before end of file");
+    }
+    else if (c == '\n'){
+
+    }
+    else if (isspace(c))
+        c = ' ';
+    else if (iscntrl(c))
+    {  mpl_internal_enter_context(mpl);
+        mpl_internal_error(mpl, "control character " + c + " not allowed");
+    }
+    mpl.c = c;
+}
+
+function mpl_internal_append_char(mpl){
+    xassert(0 <= mpl.imlen && mpl.imlen <= MAX_LENGTH);
+    if (mpl.imlen == MAX_LENGTH)
+    {  switch (mpl.token)
+    {  case T_NAME:
+            mpl_internal_enter_context(mpl);
+            mpl_internal_error(mpl, "symbolic name " + mpl.image + "... too long");
+            break;
+        case T_SYMBOL:
+            mpl_internal_enter_context(mpl);
+            mpl_internal_error(mpl, "symbol " + mpl.image + "... too long");
+            break;
+        case T_NUMBER:
+            mpl_internal_enter_context(mpl);
+            mpl_internal_error(mpl, "numeric literal " + mpl.image + "... too long");
+            break;
+        case T_STRING:
+            mpl_internal_enter_context(mpl);
+            mpl_internal_error(mpl, "string literal too long");
+            break;
+        default:
+            xassert(mpl != mpl);
+    }
+    }
+    mpl.image += mpl.c ;
+    mpl.imlen++;
+    mpl_internal_get_char(mpl);
+}
+
+function mpl_internal_get_token(mpl){
+
+    function sptp(){
+        mpl_internal_enter_context(mpl);
+        mpl_internal_error(mpl, "keyword s.t. incomplete");
+    }
+
+    function err(){
+        mpl_internal_enter_context(mpl);
+        mpl_internal_error(mpl, "cannot convert numeric literal " + mpl.image + " to floating-point number");
+    }
+
+    function scanDecimal(){
+        /* scan optional decimal exponent */
+        if (mpl.c == 'e' || mpl.c == 'E')
+        {   mpl_internal_append_char(mpl);
+            if (mpl.c == '+' || mpl.c == '-') mpl_internal_append_char(mpl);
+            if (!isdigit(mpl.c))
+            {  mpl_internal_enter_context(mpl);
+                mpl_internal_error(mpl, "numeric literal " + mpl.image + " incomplete");
+            }
+            while (isdigit(mpl.c)) mpl_internal_append_char(mpl);
+        }
+        /* there must be no letter following the numeric literal */
+        if (isalpha(mpl.c) || mpl.c == '_')
+        {   mpl_internal_enter_context(mpl);
+            mpl_internal_error(mpl, "symbol " + mpl.image + mpl.c + "... should be enclosed in quotes");
+        }
+    }
+
+    /* save the current token */
+    mpl.b_token = mpl.token;
+    mpl.b_imlen = mpl.imlen;
+    mpl.b_image = mpl.image;
+    mpl.b_value = mpl.value;
+    /* if the next token is already scanned, make it current */
+    if (mpl.f_scan)
+    {   mpl.f_scan = 0;
+        mpl.token = mpl.f_token;
+        mpl.imlen = mpl.f_imlen;
+        mpl.image = mpl.f_image;
+        mpl.value = mpl.f_value;
+        return;
+    }
+    /* nothing has been scanned so far */
+    while (true){
+        mpl.token = 0;
+        mpl.imlen = 0;
+        mpl.image = '';
+        mpl.value = 0.0;
+        /* skip any uninteresting characters */
+        while (mpl.c == ' ' || mpl.c == '\n') mpl_internal_get_char(mpl);
+        /* recognize and construct the token */
+        if (mpl.c == MPL_EOF)
+        {  /* end-of-file reached */
+            mpl.token = T_EOF;
+        }
+        else if (mpl.c == '#')
+        {  /* comment; skip anything until end-of-line */
+            while (mpl.c != '\n' && mpl.c != MPL_EOF) mpl_internal_get_char(mpl);
+            continue;
+        }
+        else if (!mpl.flag_d && (isalpha(mpl.c) || mpl.c == '_'))
+        {  /* symbolic name or reserved keyword */
+            mpl.token = T_NAME;
+            while (isalnum(mpl.c) || mpl.c == '_') mpl_internal_append_char(mpl);
+            if (mpl.image == "and")
+                mpl.token = T_AND;
+            else if (mpl.image == "by")
+                mpl.token = T_BY;
+            else if (mpl.image == "cross")
+                mpl.token = T_CROSS;
+            else if (mpl.image == "diff")
+                mpl.token = T_DIFF;
+            else if (mpl.image == "div")
+                mpl.token = T_DIV;
+            else if (mpl.image == "else")
+                mpl.token = T_ELSE;
+            else if (mpl.image == "if")
+                mpl.token = T_IF;
+            else if (mpl.image == "in")
+                mpl.token = T_IN;
+            else if (mpl.image == "Infinity")
+                mpl.token = T_INFINITY;
+            else if (mpl.image == "inter")
+                mpl.token = T_INTER;
+            else if (mpl.image == "less")
+                mpl.token = T_LESS;
+            else if (mpl.image == "mod")
+                mpl.token = T_MOD;
+            else if (mpl.image == "not")
+                mpl.token = T_NOT;
+            else if (mpl.image == "or")
+                mpl.token = T_OR;
+            else if (mpl.image == "s" && mpl.c == '.')
+            {   mpl.token = T_SPTP;
+                mpl_internal_append_char(mpl);
+                if (mpl.c != 't') sptp();
+                mpl_internal_append_char(mpl);
+                if (mpl.c != '.') sptp();
+                mpl_internal_append_char(mpl);
+            }
+            else if (mpl.image == "symdiff")
+                mpl.token = T_SYMDIFF;
+            else if (mpl.image == "then")
+                mpl.token = T_THEN;
+            else if (mpl.image == "union")
+                mpl.token = T_UNION;
+            else if (mpl.image == "within")
+                mpl.token = T_WITHIN;
+        }
+        else if (!mpl.flag_d && isdigit(mpl.c))
+        {   /* numeric literal */
+            mpl.token = T_NUMBER;
+            /* scan integer part */
+            while (isdigit(mpl.c)) mpl_internal_append_char(mpl);
+            /* scan optional fractional part */
+            var skip = false;
+            if (mpl.c == '.')
+            {   mpl_internal_append_char(mpl);
+                if (mpl.c == '.')
+                {  /* hmm, it is not the fractional part, it is dots that
+                 follow the integer part */
+                    mpl.imlen--;
+                    mpl.image = mpl.image.substr(0,mpl.image.length-1);
+                    mpl.f_dots = 1;
+                    skip = true;
+                } else{
+                    while (isdigit(mpl.c)) mpl_internal_append_char(mpl);
+                }
+            }
+            if (!skip)
+                scanDecimal();
+            /* convert numeric literal to floating-point */
+            if (str2num(mpl.image, function(v){mpl.value = v})) err();
+        }
+        else if (mpl.c == '\'' || mpl.c == '"')
+        {   /* character string */
+            var quote = mpl.c;
+            mpl.token = T_STRING;
+            mpl_internal_get_char(mpl);
+            for (;;)
+            {  if (mpl.c == '\n' || mpl.c == MPL_EOF)
+            {   mpl_internal_enter_context(mpl);
+                mpl_internal_error(mpl, "unexpected end of line; string literal incomplete");
+            }
+                if (mpl.c == quote)
+                {  mpl_internal_get_char(mpl);
+                    if (mpl.c != quote) break;
+                }
+                mpl_internal_append_char(mpl);
+            }
+        }
+        else if (!mpl.flag_d && mpl.c == '+'){
+            mpl.token = T_PLUS; mpl_internal_append_char(mpl);
+        }
+        else if (!mpl.flag_d && mpl.c == '-'){
+            mpl.token = T_MINUS; mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == '*')
+        {   mpl.token = T_ASTERISK; mpl_internal_append_char(mpl);
+            if (mpl.c == '*'){
+                mpl.token = T_POWER; mpl_internal_append_char(mpl);
+            }
+        }
+        else if (mpl.c == '/')
+        {   mpl.token = T_SLASH; mpl_internal_append_char(mpl);
+            if (mpl.c == '*')
+            {  /* comment sequence */
+                mpl_internal_get_char(mpl);
+                for (;;)
+                {  if (mpl.c == MPL_EOF)
+                {  /* do not call enter_context at this point */
+                    mpl_internal_error(mpl, "unexpected end of file; comment sequence incomplete");
+                }
+                else if (mpl.c == '*')
+                {  mpl_internal_get_char(mpl);
+                    if (mpl.c == '/') break;
+                }
+                else
+                    mpl_internal_get_char(mpl);
+                }
+                mpl_internal_get_char(mpl);
+                continue;
+            }
+        }
+        else if (mpl.c == '^'){
+            mpl.token = T_POWER; mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == '<')
+        {   mpl.token = T_LT; mpl_internal_append_char(mpl);
+            if (mpl.c == '='){
+                mpl.token = T_LE; mpl_internal_append_char(mpl);
+            }
+            else if (mpl.c == '>'){
+                mpl.token = T_NE; mpl_internal_append_char(mpl);
+            }
+            else if (mpl.c == '-'){
+                mpl.token = T_INPUT; mpl_internal_append_char(mpl);
+            }
+        }
+        else if (mpl.c == '=')
+        {   mpl.token = T_EQ; mpl_internal_append_char(mpl);
+            if (mpl.c == '=') mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == '>')
+        {   mpl.token = T_GT; mpl_internal_append_char(mpl);
+            if (mpl.c == '='){
+                mpl.token = T_GE; mpl_internal_append_char(mpl);
+            }
+            else if (mpl.c == '>'){
+                mpl.token = T_APPEND; mpl_internal_append_char(mpl);
+            }
+        }
+        else if (mpl.c == '!')
+        {   mpl.token = T_NOT; mpl_internal_append_char(mpl);
+            if (mpl.c == '='){
+                mpl.token = T_NE; mpl_internal_append_char(mpl);
+            }
+        }
+        else if (mpl.c == '&')
+        {   mpl.token = T_CONCAT; mpl_internal_append_char(mpl);
+            if (mpl.c == '&'){
+                mpl.token = T_AND; mpl_internal_append_char(mpl);
+            }
+        }
+        else if (mpl.c == '|')
+        {   mpl.token = T_BAR; mpl_internal_append_char(mpl);
+            if (mpl.c == '|'){
+                mpl.token = T_OR; mpl_internal_append_char(mpl);
+            }
+        }
+        else if (!mpl.flag_d && mpl.c == '.')
+        {   mpl.token = T_POINT; mpl_internal_append_char(mpl);
+            if (mpl.f_dots)
+            {  /* dots; the first dot was read on the previous call to the
+             scanner, so the current character is the second dot */
+                mpl.token = T_DOTS;
+                mpl.imlen = 2;
+                mpl.image = "..";
+                mpl.f_dots = 0;
+            }
+            else if (mpl.c == '.'){
+                mpl.token = T_DOTS; mpl_internal_append_char(mpl);
+            }
+            else if (isdigit(mpl.c))
+            {  /* numeric literal that begins with the decimal point */
+                mpl.token = T_NUMBER; mpl_internal_append_char(mpl);
+                while (isdigit(mpl.c)) mpl_internal_append_char(mpl);
+                scanDecimal();
+            }
+        }
+        else if (mpl.c == ','){
+            mpl.token = T_COMMA; mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == ':')
+        {  mpl.token = T_COLON; mpl_internal_append_char(mpl);
+            if (mpl.c == '='){
+                mpl.token = T_ASSIGN; mpl_internal_append_char(mpl);
+            }
+        }
+        else if (mpl.c == ';'){
+            mpl.token = T_SEMICOLON; mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == '('){
+            mpl.token = T_LEFT; mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == ')'){
+            mpl.token = T_RIGHT; mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == '['){
+            mpl.token = T_LBRACKET; mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == ']'){
+            mpl.token = T_RBRACKET; mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == '{'){
+            mpl.token = T_LBRACE; mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == '}'){
+            mpl.token = T_RBRACE; mpl_internal_append_char(mpl);
+        }
+        else if (mpl.c == '~'){
+            mpl.token = T_TILDE; mpl_internal_append_char(mpl);
+        }
+        else if (isalnum(mpl.c) || strchr("+-._", mpl.c) >= 0)
+        {   /* symbol */
+            xassert(mpl.flag_d);
+            mpl.token = T_SYMBOL;
+            while (isalnum(mpl.c) || strchr("+-._", mpl.c) >= 0)
+                mpl_internal_append_char(mpl);
+            switch (str2num(mpl.image, function(v){mpl.value = v})){
+                case 0:
+                    mpl.token = T_NUMBER;
+                    break;
+                case 1:
+                    err();
+                    break;
+                case 2:
+                    break;
+                default:
+                    xassert(mpl != mpl);
+            }
+        }
+        else
+        {   mpl_internal_enter_context(mpl);
+            mpl_internal_error(mpl, "character " + mpl.c + " not allowed");
+        }
+
+        break;
+    }
+
+    /* enter the current token into the context queue */
+    mpl_internal_enter_context(mpl);
+    /* reset the flag, which may be set by indexing_expression() and
+     is used by expression_list() */
+    mpl.flag_x = 0;
+}
+
+function mpl_internal_unget_token(mpl){
+    /* save the current token, which becomes the next one */
+    xassert(!mpl.f_scan);
+    mpl.f_scan = 1;
+    mpl.f_token = mpl.token;
+    mpl.f_imlen = mpl.imlen;
+    mpl.f_image = mpl.image;
+    mpl.f_value = mpl.value;
+    /* restore the previous token, which becomes the current one */
+    mpl.token = mpl.b_token;
+    mpl.imlen = mpl.b_imlen;
+    mpl.image = mpl.b_image;
+    mpl.value = mpl.b_value;
+}
+
+function mpl_internal_is_keyword(mpl, keyword){
+    return mpl.token == T_NAME && mpl.image == keyword;
+}
+
+function mpl_internal_is_reserved(mpl){
+    return mpl.token == T_AND && mpl.image[0] == 'a' ||
+        mpl.token == T_BY ||
+        mpl.token == T_CROSS ||
+        mpl.token == T_DIFF ||
+        mpl.token == T_DIV ||
+        mpl.token == T_ELSE ||
+        mpl.token == T_IF ||
+        mpl.token == T_IN ||
+        mpl.token == T_INTER ||
+        mpl.token == T_LESS ||
+        mpl.token == T_MOD ||
+        mpl.token == T_NOT && mpl.image[0] == 'n' ||
+        mpl.token == T_OR && mpl.image[0] == 'o' ||
+        mpl.token == T_SYMDIFF ||
+        mpl.token == T_THEN ||
+        mpl.token == T_UNION ||
+        mpl.token == T_WITHIN;
+}
+
+function mpl_internal_make_code(mpl, op, arg, type, dim){
+    var code = {};
+    var domain;
+    var block;
+    var e;
+    /* generate pseudo-code */
+    code.op = op;
+    code.vflag = 0; /* is inherited from operand(s) */
+    /* copy operands and also make them referring to the pseudo-code
+     being generated, because the latter becomes the parent for all
+     its operands */
+    code.arg = mpl_internal_create_operands();
+    code.value = {};
+    switch (op)
+    {   case O_NUMBER:
+        code.arg.num = arg.num;
+        break;
+        case O_STRING:
+            code.arg.str = arg.str;
+            break;
+        case O_INDEX:
+            code.arg.index.slot = arg.index.slot;
+            code.arg.index.next = arg.index.next;
+            break;
+        case O_MEMNUM:
+        case O_MEMSYM:
+            for (e = arg.par.list; e != null; e = e.next)
+            {  xassert(e.x != null);
+                xassert(e.x.up == null);
+                e.x.up = code;
+                code.vflag |= e.x.vflag;
+            }
+            code.arg.par.par = arg.par.par;
+            code.arg.par.list = arg.par.list;
+            break;
+        case O_MEMSET:
+            for (e = arg.set.list; e != null; e = e.next)
+            {  xassert(e.x != null);
+                xassert(e.x.up == null);
+                e.x.up = code;
+                code.vflag |= e.x.vflag;
+            }
+            code.arg.set.set = arg.set.set;
+            code.arg.set.list = arg.set.list;
+            break;
+        case O_MEMVAR:
+            for (e = arg.var.list; e != null; e = e.next)
+            {  xassert(e.x != null);
+                xassert(e.x.up == null);
+                e.x.up = code;
+                code.vflag |= e.x.vflag;
+            }
+            code.arg.var.var = arg.var.var;
+            code.arg.var.list = arg.var.list;
+            code.arg.var.suff = arg.var.suff;
+            break;
+        case O_MEMCON:
+            for (e = arg.con.list; e != null; e = e.next)
+            {  xassert(e.x != null);
+                xassert(e.x.up == null);
+                e.x.up = code;
+                code.vflag |= e.x.vflag;
+            }
+            code.arg.con.con = arg.con.con;
+            code.arg.con.list = arg.con.list;
+            code.arg.con.suff = arg.con.suff;
+            break;
+        case O_TUPLE:
+        case O_MAKE:
+            for (e = arg.list; e != null; e = e.next)
+            {  xassert(e.x != null);
+                xassert(e.x.up == null);
+                e.x.up = code;
+                code.vflag |= e.x.vflag;
+            }
+            code.arg.list = arg.list;
+            break;
+        case O_SLICE:
+            xassert(arg.slice != null);
+            code.arg.slice = arg.slice;
+            break;
+        case O_IRAND224:
+        case O_UNIFORM01:
+        case O_NORMAL01:
+        case O_GMTIME:
+            code.vflag = 1;
+            break;
+        case O_CVTNUM:
+        case O_CVTSYM:
+        case O_CVTLOG:
+        case O_CVTTUP:
+        case O_CVTLFM:
+        case O_PLUS:
+        case O_MINUS:
+        case O_NOT:
+        case O_ABS:
+        case O_CEIL:
+        case O_FLOOR:
+        case O_EXP:
+        case O_LOG:
+        case O_LOG10:
+        case O_SQRT:
+        case O_SIN:
+        case O_COS:
+        case O_ATAN:
+        case O_ROUND:
+        case O_TRUNC:
+        case O_CARD:
+        case O_LENGTH:
+            /* unary operation */
+            xassert(arg.arg.x != null);
+            xassert(arg.arg.x.up == null);
+            arg.arg.x.up = code;
+            code.vflag |= arg.arg.x.vflag;
+            code.arg.arg.x = arg.arg.x;
+            break;
+        case O_ADD:
+        case O_SUB:
+        case O_LESS:
+        case O_MUL:
+        case O_DIV:
+        case O_IDIV:
+        case O_MOD:
+        case O_POWER:
+        case O_ATAN2:
+        case O_ROUND2:
+        case O_TRUNC2:
+        case O_UNIFORM:
+            if (op == O_UNIFORM) code.vflag = 1;
+        case O_NORMAL:
+            if (op == O_NORMAL) code.vflag = 1;
+        case O_CONCAT:
+        case O_LT:
+        case O_LE:
+        case O_EQ:
+        case O_GE:
+        case O_GT:
+        case O_NE:
+        case O_AND:
+        case O_OR:
+        case O_UNION:
+        case O_DIFF:
+        case O_SYMDIFF:
+        case O_INTER:
+        case O_CROSS:
+        case O_IN:
+        case O_NOTIN:
+        case O_WITHIN:
+        case O_NOTWITHIN:
+        case O_SUBSTR:
+        case O_STR2TIME:
+        case O_TIME2STR:
+            /* binary operation */
+            xassert(arg.arg.x != null);
+            xassert(arg.arg.x.up == null);
+            arg.arg.x.up = code;
+            code.vflag |= arg.arg.x.vflag;
+            xassert(arg.arg.y != null);
+            xassert(arg.arg.y.up == null);
+            arg.arg.y.up = code;
+            code.vflag |= arg.arg.y.vflag;
+            code.arg.arg.x = arg.arg.x;
+            code.arg.arg.y = arg.arg.y;
+            break;
+        case O_DOTS:
+        case O_FORK:
+        case O_SUBSTR3:
+            /* ternary operation */
+            xassert(arg.arg.x != null);
+            xassert(arg.arg.x.up == null);
+            arg.arg.x.up = code;
+            code.vflag |= arg.arg.x.vflag;
+            xassert(arg.arg.y != null);
+            xassert(arg.arg.y.up == null);
+            arg.arg.y.up = code;
+            code.vflag |= arg.arg.y.vflag;
+            if (arg.arg.z != null)
+            {  xassert(arg.arg.z.up == null);
+                arg.arg.z.up = code;
+                code.vflag |= arg.arg.z.vflag;
+            }
+            code.arg.arg.x = arg.arg.x;
+            code.arg.arg.y = arg.arg.y;
+            code.arg.arg.z = arg.arg.z;
+            break;
+        case O_MIN:
+        case O_MAX:
+            /* n-ary operation */
+            for (e = arg.list; e != null; e = e.next)
+            {  xassert(e.x != null);
+                xassert(e.x.up == null);
+                e.x.up = code;
+                code.vflag |= e.x.vflag;
+            }
+            code.arg.list = arg.list;
+            break;
+        case O_SUM:
+        case O_PROD:
+        case O_MINIMUM:
+        case O_MAXIMUM:
+        case O_FORALL:
+        case O_EXISTS:
+        case O_SETOF:
+        case O_BUILD:
+            /* iterated operation */
+            domain = arg.loop.domain;
+            xassert(domain != null);
+            if (domain.code != null)
+            {  xassert(domain.code.up == null);
+                domain.code.up = code;
+                code.vflag |= domain.code.vflag;
+            }
+            for (block = domain.list; block != null; block =
+                block.next)
+            {  xassert(block.code != null);
+                xassert(block.code.up == null);
+                block.code.up = code;
+                code.vflag |= block.code.vflag;
+            }
+            if (arg.loop.x != null)
+            {  xassert(arg.loop.x.up == null);
+                arg.loop.x.up = code;
+                code.vflag |= arg.loop.x.vflag;
+            }
+            code.arg.loop.domain = arg.loop.domain;
+            code.arg.loop.x = arg.loop.x;
+            break;
+        default:
+            xassert(op != op);
+    }
+    /* set other attributes of the pseudo-code */
+    code.type = type;
+    code.dim = dim;
+    code.up = null;
+    code.valid = 0;
+    code.value = {};
+    return code;
+}
+
+function mpl_internal_make_unary(mpl, op, x, type, dim){
+    var code;
+    var arg = mpl_internal_create_operands();
+    xassert(x != null);
+    arg.arg.x = x;
+    code = mpl_internal_make_code(mpl, op, arg, type, dim);
+    return code;
+}
+
+function mpl_internal_make_binary(mpl, op, x, y, type, dim){
+    var code;
+    var arg = mpl_internal_create_operands();
+    xassert(x != null);
+    xassert(y != null);
+    arg.arg.x = x;
+    arg.arg.y = y;
+    code = mpl_internal_make_code(mpl, op, arg, type, dim);
+    return code;
+}
+
+function mpl_internal_make_ternary(mpl, op, x, y, z, type, dim){
+    var code;
+    var arg = mpl_internal_create_operands();
+    xassert(x != null);
+    xassert(y != null);
+    /* third operand can be null */
+    arg.arg.x = x;
+    arg.arg.y = y;
+    arg.arg.z = z;
+    code = mpl_internal_make_code(mpl, op, arg, type, dim);
+    return code;
+}
+
+function mpl_internal_numeric_literal(mpl){
+    var code;
+    var arg = mpl_internal_create_operands();
+    xassert(mpl.token == T_NUMBER);
+    arg.num = mpl.value;
+    code = mpl_internal_make_code(mpl, O_NUMBER, arg, A_NUMERIC, 0);
+    mpl_internal_get_token(mpl /* <numeric literal> */);
+    return code;
+}
+
+function mpl_internal_string_literal(mpl){
+    var code;
+    var arg = mpl_internal_create_operands();
+    xassert(mpl.token == T_STRING);
+    arg.str = mpl.image;
+    code = mpl_internal_make_code(mpl, O_STRING, arg, A_SYMBOLIC, 0);
+    mpl_internal_get_token(mpl /* <string literal> */);
+    return code;
+}
+
+function mpl_internal_expand_arg_list(mpl, list, x){
+    var tail = {}, temp;
+    xassert(x != null);
+    /* create new operands list entry */
+    tail.x = x;
+    tail.next = null;
+    /* and append it to the operands list */
+    if (list == null)
+        list = tail;
+    else
+    {   for (temp = list; temp.next != null; temp = temp.next){}
+        temp.next = tail;
+    }
+    return list;
+}
+
+function mpl_internal_arg_list_len(mpl, list){
+    var temp;
+    var len;
+
+    len = 0;
+    for (temp = list; temp != null; temp = temp.next) len++;
+    return len;
+}
+
+function mpl_internal_subscript_list(mpl){
+    var x;
+    var list = null;
+    for (;;)
+    {   /* parse subscript expression */
+        x = mpl_internal_expression_5(mpl);
+        /* convert it to symbolic type, if necessary */
+        if (x.type == A_NUMERIC)
+            x = mpl_internal_make_unary(mpl, O_CVTSYM, x, A_SYMBOLIC, 0);
+        /* check that now the expression is of symbolic type */
+        if (x.type != A_SYMBOLIC)
+            mpl_internal_error(mpl, "subscript expression has invalid type");
+        xassert(x.dim == 0);
+        /* and append it to the subscript list */
+        list = mpl_internal_expand_arg_list(mpl, list, x);
+        /* check a token that follows the subscript expression */
+        if (mpl.token == T_COMMA)
+            mpl_internal_get_token(mpl /* , */);
+        else if (mpl.token == T_RBRACKET)
+            break;
+        else
+            mpl_internal_error(mpl, "syntax error in subscript list");
+    }
+    return list;
+}
+
+function mpl_internal_object_reference(mpl){
+    var slot, set, par, var_, con, list, code, name, dim, suff;
+    var arg = mpl_internal_create_operands();
+    /* find the object in the symbolic name table */
+    xassert(mpl.token == T_NAME);
+    var node = mpl.tree[mpl.image];
+    if (node == null)
+        mpl_internal_error(mpl, mpl.image + " not defined");
+    /* check the object type and obtain its dimension */
+    switch (node.type)
+    {  case A_INDEX:
+        /* dummy index */
+        slot = node.link;
+        name = slot.name;
+        dim = 0;
+        break;
+        case A_SET:
+            /* model set */
+            set = node.link;
+            name = set.name;
+            dim = set.dim;
+            /* if a set object is referenced in its own declaration and
+             the dimen attribute is not specified yet, use dimen 1 by
+             default */
+            if (set.dimen == 0) set.dimen = 1;
+            break;
+        case A_PARAMETER:
+            /* model parameter */
+            par = node.link;
+            name = par.name;
+            dim = par.dim;
+            break;
+        case A_VARIABLE:
+            /* model variable */
+            var_ = node.link;
+            name = var_.name;
+            dim = var_.dim;
+            break;
+        case A_CONSTRAINT:
+            /* model constraint or objective */
+            con = node.link;
+            name = con.name;
+            dim = con.dim;
+            break;
+        default:
+            xassert(node != node);
+    }
+    mpl_internal_get_token(mpl /* <symbolic name> */);
+    /* parse optional subscript list */
+    if (mpl.token == T_LBRACKET)
+    {  /* subscript list is specified */
+        if (dim == 0)
+            mpl_internal_error(mpl, name + " cannot be subscripted");
+        mpl_internal_get_token(mpl /* [ */);
+        list = mpl_internal_subscript_list(mpl);
+        if (dim != mpl_internal_arg_list_len(mpl, list))
+            mpl_internal_error(mpl, name + " must have " + dim + " subscript" + (dim == 1 ? "" : "s") + " rather than " + mpl_internal_arg_list_len(mpl, list));
+        xassert(mpl.token == T_RBRACKET);
+        mpl_internal_get_token(mpl /* ] */);
+    }
+    else
+    {  /* subscript list is not specified */
+        if (dim != 0)
+            mpl_internal_error(mpl, name + " must be subscripted");
+        list = null;
+    }
+    /* parse optional suffix */
+    if (!mpl.flag_s && node.type == A_VARIABLE)
+        suff = DOT_NONE;
+    else
+        suff = DOT_VAL;
+    if (mpl.token == T_POINT)
+    {  mpl_internal_get_token(mpl /* . */);
+        if (mpl.token != T_NAME)
+            mpl_internal_error(mpl, "invalid use of period");
+        if (!(node.type == A_VARIABLE ||
+            node.type == A_CONSTRAINT))
+            mpl_internal_error(mpl, name + " cannot have a suffix");
+        if (mpl.image == "lb")
+            suff = DOT_LB;
+        else if (mpl.image == "ub")
+            suff = DOT_UB;
+        else if (mpl.image == "status")
+            suff = DOT_STATUS;
+        else if (mpl.image == "val")
+            suff = DOT_VAL;
+        else if (mpl.image == "dual")
+            suff = DOT_DUAL;
+        else
+            mpl_internal_error(mpl, "suffix ." + mpl.image + " invalid");
+        mpl_internal_get_token(mpl /* suffix */);
+    }
+    /* generate pseudo-code to take value of the object */
+    switch (node.type)
+    {  case A_INDEX:
+        arg.index.slot = slot;
+        arg.index.next = slot.list;
+        code = mpl_internal_make_code(mpl, O_INDEX, arg, A_SYMBOLIC, 0);
+        slot.list = code;
+        break;
+        case A_SET:
+            arg.set.set = set;
+            arg.set.list = list;
+            code = mpl_internal_make_code(mpl, O_MEMSET, arg, A_ELEMSET, set.dimen);
+            break;
+        case A_PARAMETER:
+            arg.par.par = par;
+            arg.par.list = list;
+            if (par.type == A_SYMBOLIC)
+                code = mpl_internal_make_code(mpl, O_MEMSYM, arg, A_SYMBOLIC, 0);
+            else
+                code = mpl_internal_make_code(mpl, O_MEMNUM, arg, A_NUMERIC, 0);
+            break;
+        case A_VARIABLE:
+            if (!mpl.flag_s && (suff == DOT_STATUS || suff == DOT_VAL
+                || suff == DOT_DUAL))
+                mpl_internal_error(mpl, "invalid reference to status, primal value, or dual value of variable " + var_.name + " above solve statement");
+            arg.var.var = var_;
+            arg.var.list = list;
+            arg.var.suff = suff;
+            code = mpl_internal_make_code(mpl, O_MEMVAR, arg, suff == DOT_NONE ?
+                A_FORMULA : A_NUMERIC, 0);
+            break;
+        case A_CONSTRAINT:
+            if (!mpl.flag_s && (suff == DOT_STATUS || suff == DOT_VAL
+                || suff == DOT_DUAL))
+                mpl_internal_error(mpl, "invalid reference to status, primal value, o"+
+                    "r dual value of " + (con.type == A_CONSTRAINT ? "constraint" : "objective") +
+                    " " + con.name + " above solve statement");
+            arg.con.con = con;
+            arg.con.list = list;
+            arg.con.suff = suff;
+            code = mpl_internal_make_code(mpl, O_MEMCON, arg, A_NUMERIC, 0);
+            break;
+        default:
+            xassert(node != node);
+    }
+    return code;
+}
+
+function mpl_internal_numeric_argument(mpl, func){
+    var x = mpl_internal_expression_5(mpl);
+    /* convert the argument to numeric type, if necessary */
+    if (x.type == A_SYMBOLIC)
+        x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+    /* check that now the argument is of numeric type */
+    if (x.type != A_NUMERIC)
+        mpl_internal_error(mpl, "argument for " + func + " has invalid type");
+    xassert(x.dim == 0);
+    return x;
+}
+
+function mpl_internal_symbolic_argument(mpl, func){
+    var x = mpl_internal_expression_5(mpl);
+    /* convert the argument to symbolic type, if necessary */
+    if (x.type == A_NUMERIC)
+        x = mpl_internal_make_unary(mpl, O_CVTSYM, x, A_SYMBOLIC, 0);
+    /* check that now the argument is of symbolic type */
+    if (x.type != A_SYMBOLIC)
+        mpl_internal_error(mpl, "argument for " + func + " has invalid type");
+    xassert(x.dim == 0);
+    return x;
+}
+
+function mpl_internal_elemset_argument(mpl, func){
+    var x = mpl_internal_expression_9(mpl);
+    if (x.type != A_ELEMSET)
+        mpl_internal_error(mpl, "argument for " + func + " has invalid type");
+    xassert(x.dim > 0);
+    return x;
+}
+
+function mpl_internal_function_reference(mpl){
+    var code;
+    var arg = mpl_internal_create_operands();
+    var op;
+    var func;
+    /* determine operation code */
+    xassert(mpl.token == T_NAME);
+    if (mpl.image == "abs")
+        op = O_ABS;
+    else if (mpl.image == "ceil")
+        op = O_CEIL;
+    else if (mpl.image == "floor")
+        op = O_FLOOR;
+    else if (mpl.image == "exp")
+        op = O_EXP;
+    else if (mpl.image == "log")
+        op = O_LOG;
+    else if (mpl.image == "log10")
+        op = O_LOG10;
+    else if (mpl.image == "sqrt")
+        op = O_SQRT;
+    else if (mpl.image == "sin")
+        op = O_SIN;
+    else if (mpl.image == "cos")
+        op = O_COS;
+    else if (mpl.image == "atan")
+        op = O_ATAN;
+    else if (mpl.image == "min")
+        op = O_MIN;
+    else if (mpl.image == "max")
+        op = O_MAX;
+    else if (mpl.image == "round")
+        op = O_ROUND;
+    else if (mpl.image == "trunc")
+        op = O_TRUNC;
+    else if (mpl.image == "Irand224")
+        op = O_IRAND224;
+    else if (mpl.image == "Uniform01")
+        op = O_UNIFORM01;
+    else if (mpl.image == "Uniform")
+        op = O_UNIFORM;
+    else if (mpl.image == "Normal01")
+        op = O_NORMAL01;
+    else if (mpl.image == "Normal")
+        op = O_NORMAL;
+    else if (mpl.image == "card")
+        op = O_CARD;
+    else if (mpl.image == "length")
+        op = O_LENGTH;
+    else if (mpl.image == "substr")
+        op = O_SUBSTR;
+    else if (mpl.image == "str2time")
+        op = O_STR2TIME;
+    else if (mpl.image == "time2str")
+        op = O_TIME2STR;
+    else if (mpl.image == "gmtime")
+        op = O_GMTIME;
+    else
+        mpl_internal_error(mpl, "function " + mpl.image + " unknown");
+    /* save symbolic name of the function */
+    func = mpl.image;
+    xassert(func.length < 16);
+    mpl_internal_get_token(mpl /* <symbolic name> */);
+    /* check the left parenthesis that follows the function name */
+    xassert(mpl.token == T_LEFT);
+    mpl_internal_get_token(mpl /* ( */);
+    /* parse argument list */
+    if (op == O_MIN || op == O_MAX)
+    {  /* min and max allow arbitrary number of arguments */
+        arg.list = null;
+        /* parse argument list */
+        for (;;)
+        {  /* parse argument and append it to the operands list */
+            arg.list = mpl_internal_expand_arg_list(mpl, arg.list,
+                mpl_internal_numeric_argument(mpl, func));
+            /* check a token that follows the argument */
+            if (mpl.token == T_COMMA)
+                mpl_internal_get_token(mpl /* , */);
+            else if (mpl.token == T_RIGHT)
+                break;
+            else
+                mpl_internal_error(mpl, "syntax error in argument list for " + func);
+        }
+    }
+    else if (op == O_IRAND224 || op == O_UNIFORM01 || op ==
+        O_NORMAL01 || op == O_GMTIME)
+    {  /* Irand224, Uniform01, Normal01, gmtime need no arguments */
+        if (mpl.token != T_RIGHT)
+            mpl_internal_error(mpl, func + " needs no arguments");
+    }
+    else if (op == O_UNIFORM || op == O_NORMAL)
+    {  /* Uniform and Normal need two arguments */
+        /* parse the first argument */
+        arg.arg.x = mpl_internal_numeric_argument(mpl, func);
+        /* check a token that follows the first argument */
+        if (mpl.token == T_COMMA){
+
+        }
+        else if (mpl.token == T_RIGHT)
+            mpl_internal_error(mpl, func + " needs two arguments");
+        else
+            mpl_internal_error(mpl, "syntax error in argument for " + func);
+        mpl_internal_get_token(mpl /* , */);
+        /* parse the second argument */
+        arg.arg.y = mpl_internal_numeric_argument(mpl, func);
+        /* check a token that follows the second argument */
+        if (mpl.token == T_COMMA)
+            mpl_internal_error(mpl, func + " needs two argument");
+        else if (mpl.token == T_RIGHT){
+
+        }
+        else
+            mpl_internal_error(mpl, "syntax error in argument for " + func);
+    }
+    else if (op == O_ATAN || op == O_ROUND || op == O_TRUNC)
+    {  /* atan, round, and trunc need one or two arguments */
+        /* parse the first argument */
+        arg.arg.x = mpl_internal_numeric_argument(mpl, func);
+        /* parse the second argument, if specified */
+        if (mpl.token == T_COMMA)
+        {  switch (op)
+        {  case O_ATAN:  op = O_ATAN2;  break;
+            case O_ROUND: op = O_ROUND2; break;
+            case O_TRUNC: op = O_TRUNC2; break;
+            default: xassert(op != op);
+        }
+            mpl_internal_get_token(mpl /* , */);
+            arg.arg.y = mpl_internal_numeric_argument(mpl, func);
+        }
+        /* check a token that follows the last argument */
+        if (mpl.token == T_COMMA)
+            mpl_internal_error(mpl, func + " needs one or two arguments");
+        else if (mpl.token == T_RIGHT){
+
+        }
+        else
+            mpl_internal_error(mpl, "syntax error in argument for " + func);
+    }
+    else if (op == O_SUBSTR)
+    {  /* substr needs two or three arguments */
+        /* parse the first argument */
+        arg.arg.x = mpl_internal_symbolic_argument(mpl, func);
+        /* check a token that follows the first argument */
+        if (mpl.token == T_COMMA){
+
+        }
+        else if (mpl.token == T_RIGHT)
+            mpl_internal_error(mpl, func + " needs two or three arguments");
+        else
+            mpl_internal_error(mpl, "syntax error in argument for " + func);
+        mpl_internal_get_token(mpl /* , */);
+        /* parse the second argument */
+        arg.arg.y = mpl_internal_numeric_argument(mpl, func);
+        /* parse the third argument, if specified */
+        if (mpl.token == T_COMMA)
+        {  op = O_SUBSTR3;
+            mpl_internal_get_token(mpl /* , */);
+            arg.arg.z = mpl_internal_numeric_argument(mpl, func);
+        }
+        /* check a token that follows the last argument */
+        if (mpl.token == T_COMMA)
+            mpl_internal_error(mpl, func + " needs two or three arguments");
+        else if (mpl.token == T_RIGHT){
+
+        }
+        else
+            mpl_internal_error(mpl, "syntax error in argument for " + func);
+    }
+    else if (op == O_STR2TIME)
+    {  /* str2time needs two arguments, both symbolic */
+        /* parse the first argument */
+        arg.arg.x = mpl_internal_symbolic_argument(mpl, func);
+        /* check a token that follows the first argument */
+        if (mpl.token == T_COMMA){
+
+        }
+        else if (mpl.token == T_RIGHT)
+            mpl_internal_error(mpl, func + " needs two arguments");
+        else
+            mpl_internal_error(mpl, "syntax error in argument for " + func);
+        mpl_internal_get_token(mpl /* , */);
+        /* parse the second argument */
+        arg.arg.y = mpl_internal_symbolic_argument(mpl, func);
+        /* check a token that follows the second argument */
+        if (mpl.token == T_COMMA)
+            mpl_internal_error(mpl, func + " needs two argument");
+        else if (mpl.token == T_RIGHT){
+
+        }
+        else
+            mpl_internal_error(mpl, "syntax error in argument for " + func);
+    }
+    else if (op == O_TIME2STR)
+    {  /* time2str needs two arguments, numeric and symbolic */
+        /* parse the first argument */
+        arg.arg.x = mpl_internal_numeric_argument(mpl, func);
+        /* check a token that follows the first argument */
+        if (mpl.token == T_COMMA){
+
+        }
+        else if (mpl.token == T_RIGHT)
+            mpl_internal_error(mpl, func + " needs two arguments");
+        else
+            mpl_internal_error(mpl, "syntax error in argument for " + func);
+        mpl_internal_get_token(mpl /* , */);
+        /* parse the second argument */
+        arg.arg.y = mpl_internal_symbolic_argument(mpl, func);
+        /* check a token that follows the second argument */
+        if (mpl.token == T_COMMA)
+            mpl_internal_error(mpl, func + " needs two argument");
+        else if (mpl.token == T_RIGHT){
+
+        }
+        else
+            mpl_internal_error(mpl, "syntax error in argument for " + func);
+    }
+    else
+    {  /* other functions need one argument */
+        if (op == O_CARD)
+            arg.arg.x = mpl_internal_elemset_argument(mpl, func);
+        else if (op == O_LENGTH)
+            arg.arg.x = mpl_internal_symbolic_argument(mpl, func);
+        else
+            arg.arg.x = mpl_internal_numeric_argument(mpl, func);
+        /* check a token that follows the argument */
+        if (mpl.token == T_COMMA)
+            mpl_internal_error(mpl, func + " needs one argument");
+        else if (mpl.token == T_RIGHT){
+
+        }
+        else
+            mpl_internal_error(mpl, "syntax error in argument for " + func);
+    }
+    /* make pseudo-code to call the built-in function */
+    if (op == O_SUBSTR || op == O_SUBSTR3 || op == O_TIME2STR)
+        code = mpl_internal_make_code(mpl, op, arg, A_SYMBOLIC, 0);
+    else
+        code = mpl_internal_make_code(mpl, op, arg, A_NUMERIC, 0);
+    /* the reference ends with the right parenthesis */
+    xassert(mpl.token == T_RIGHT);
+    mpl_internal_get_token(mpl /* ) */);
+    return code;
+}
+
+function mpl_internal_append_block(mpl, domain, block){
+    var temp;
+
+    xassert(domain != null);
+    xassert(block != null);
+    xassert(block.next == null);
+    if (domain.list == null)
+        domain.list = block;
+    else
+    {   for (temp = domain.list; temp.next != null; temp = temp.next){}
+        temp.next = block;
+    }
+}
+
+function mpl_internal_append_slot(mpl, block, name, code){
+    var slot = {}, temp;
+    xassert(block != null);
+    slot.name = name;
+    slot.code = code;
+    slot.value = null;
+    slot.list = null;
+    slot.next = null;
+    if (block.list == null)
+        block.list = slot;
+    else
+    {  for (temp = block.list; temp.next != null; temp = temp.next){}
+        temp.next = slot;
+    }
+    return slot;
+}
+
+function mpl_internal_expression_list(mpl){
+    var code;
+    var arg = mpl_internal_create_operands();
+    const max_dim = 20;
+    /* maximal number of components allowed within parentheses */
+    var list = new Array(max_dim + 1);
+    xfillObjArr(list, 0, max_dim + 1);
+    var flag_x, next_token, dim, j, slice = 0;
+    xassert(mpl.token == T_LEFT);
+    /* the flag, which allows recognizing undeclared symbolic names
+     as dummy indices, will be automatically reset by get_token(),
+     so save it before scanning the next token */
+    flag_x = mpl.flag_x;
+    mpl_internal_get_token(mpl /* ( */);
+    /* parse <expression list> */
+    for (dim = 1; ; dim++)
+    {   if (dim > max_dim)
+        mpl_internal_error(mpl, "too many components within parentheses");
+
+        function expr(){
+            /* current component of <expression list> is expression */
+            code = mpl_internal_expression_13(mpl);
+            /* if the current expression is followed by comma or it is
+             not the very first expression, entire <expression list>
+             is n-tuple or slice, in which case the current expression
+             should be converted to symbolic type, if necessary */
+            if (mpl.token == T_COMMA || dim > 1)
+            {  if (code.type == A_NUMERIC)
+                code = mpl_internal_make_unary(mpl, O_CVTSYM, code, A_SYMBOLIC, 0);
+                /* now the expression must be of symbolic type */
+                if (code.type != A_SYMBOLIC)
+                    mpl_internal_error(mpl, "component expression has invalid type");
+                xassert(code.dim == 0);
+            }
+            list[dim].name = null;
+            list[dim].code = code;
+        }
+
+        /* current component of <expression list> can be either dummy
+         index or expression */
+        if (mpl.token == T_NAME)
+        {  /* symbolic name is recognized as dummy index only if:
+         the flag, which allows that, is set, and
+         the name is followed by comma or right parenthesis, and
+         the name is undeclared */
+            mpl_internal_get_token(mpl /* <symbolic name> */);
+            next_token = mpl.token;
+            mpl_internal_unget_token(mpl);
+            if (!(flag_x &&
+                (next_token == T_COMMA || next_token == T_RIGHT) &&
+                mpl.tree[mpl.image] == null))
+            {  /* this is not dummy index */
+                expr();
+            } else {
+                /* all dummy indices within the same slice must have unique
+                 symbolic names */
+                for (j = 1; j < dim; j++)
+                {  if (list[j].name != null && list[j].name == mpl.image)
+                    mpl_internal_error(mpl, "duplicate dummy index " + mpl.image + " not allowed");
+                }
+                /* current component of <expression list> is dummy index */
+                list[dim].name = mpl.image;
+                list[dim].code = null;
+                mpl_internal_get_token(mpl /* <symbolic name> */);
+                /* <expression list> is a slice, because at least one dummy
+                 index has appeared */
+                slice = 1;
+                /* note that the context ( <dummy index> ) is not allowed,
+                 i.e. in this case <primary expression> is considered as
+                 a parenthesized expression */
+                if (dim == 1 && mpl.token == T_RIGHT)
+                    mpl_internal_error(mpl, list[dim].name + " not defined");
+            }
+        }
+        else
+            expr();
+
+        /* check a token that follows the current component */
+        if (mpl.token == T_COMMA)
+            mpl_internal_get_token(mpl /* , */);
+        else if (mpl.token == T_RIGHT)
+            break;
+        else
+            mpl_internal_error(mpl, "right parenthesis missing where expected");
+    }
+    /* generate pseudo-code for <primary expression> */
+    if (dim == 1 && !slice)
+    {  /* <primary expression> is a parenthesized expression */
+        code = list[1].code;
+    }
+    else if (!slice)
+    {  /* <primary expression> is a n-tuple */
+        arg.list = null;
+        for (j = 1; j <= dim; j++)
+            arg.list = mpl_internal_expand_arg_list(mpl, arg.list, list[j].code);
+        code = mpl_internal_make_code(mpl, O_TUPLE, arg, A_TUPLE, dim);
+    }
+    else
+    {  /* <primary expression> is a slice */
+        arg.slice = {};
+        for (j = 1; j <= dim; j++)
+            mpl_internal_append_slot(mpl, arg.slice, list[j].name, list[j].code);
+        /* note that actually pseudo-codes with op = O_SLICE are never
+         evaluated */
+        code = mpl_internal_make_code(mpl, O_SLICE, arg, A_TUPLE, dim);
+    }
+    mpl_internal_get_token(mpl /* ) */);
+    /* if <primary expression> is a slice, there must be the keyword
+     'in', which follows the right parenthesis */
+    if (slice && mpl.token != T_IN)
+        mpl_internal_error(mpl, "keyword in missing where expected");
+    /* if the slice flag is set and there is the keyword 'in', which
+     follows <primary expression>, the latter must be a slice */
+    if (flag_x && mpl.token == T_IN && !slice)
+    {  if (dim == 1)
+        mpl_internal_error(mpl, "syntax error in indexing expression");
+    else
+        mpl_internal_error(mpl, "0-ary slice not allowed");
+    }
+    return code;
+}
+
+function mpl_internal_literal_set(mpl, code){
+    var arg = mpl_internal_create_operands();
+    var j;
+    xassert(code != null);
+    arg.list = null;
+    /* parse <member list> */
+    for (j = 1; ; j++)
+    {  /* all member expressions must be n-tuples; so, if the current
+     expression is not n-tuple, convert it to 1-tuple */
+        if (code.type == A_NUMERIC)
+            code = mpl_internal_make_unary(mpl, O_CVTSYM, code, A_SYMBOLIC, 0);
+        if (code.type == A_SYMBOLIC)
+            code = mpl_internal_make_unary(mpl, O_CVTTUP, code, A_TUPLE, 1);
+        /* now the expression must be n-tuple */
+        if (code.type != A_TUPLE)
+            mpl_internal_error(mpl, "member expression has invalid type");
+        /* all member expressions must have identical dimension */
+        if (arg.list != null && arg.list.x.dim != code.dim)
+            mpl_internal_error(mpl, "member " + (j-1) + " has " + arg.list.x.dim + " component"
+                + (arg.list.x.dim == 1 ? "" : "s") + " while member " + j + " has "
+                + code.dim + " component" + (code.dim == 1 ? "" : "s"));
+        /* append the current expression to the member list */
+        arg.list = mpl_internal_expand_arg_list(mpl, arg.list, code);
+        /* check a token that follows the current expression */
+        if (mpl.token == T_COMMA)
+            mpl_internal_get_token(mpl /* , */);
+        else if (mpl.token == T_RBRACE)
+            break;
+        else
+            mpl_internal_error(mpl, "syntax error in literal set");
+        /* parse the next expression that follows the comma */
+        code = mpl_internal_expression_5(mpl);
+    }
+    /* generate pseudo-code for <literal set> */
+    code = mpl_internal_make_code(mpl, O_MAKE, arg, A_ELEMSET, arg.list.x.dim);
+    return code;
+}
+
+function mpl_internal_indexing_expression(mpl){
+    var domain;
+    var block;
+    var slot;
+    var code;
+    xassert(mpl.token == T_LBRACE);
+    mpl_internal_get_token(mpl /* { */);
+    if (mpl.token == T_RBRACE)
+        mpl_internal_error(mpl, "empty indexing expression not allowed");
+    /* create domain to be constructed */
+    domain = {};
+    /* parse either <member list> or <indexing list> that follows the
+     left brace */
+    for (;;)
+    {  /* domain block for <indexing element> is not created yet */
+        block = null;
+        /* pseudo-code for <basic expression> is not generated yet */
+        code = null;
+        /* check a token, which <indexing element> begins with */
+        if (mpl.token == T_NAME)
+        {  /* it is a symbolic name */
+            var next_token;
+            var name;
+            /* symbolic name is recognized as dummy index only if it is
+             followed by the keyword 'in' and not declared */
+            mpl_internal_get_token(mpl /* <symbolic name> */);
+            next_token = mpl.token;
+            mpl_internal_unget_token(mpl);
+            if (next_token == T_IN &&
+                mpl.tree[mpl.image] == null)
+            {
+                /* create domain block with one slot, which is assigned the
+                 dummy index */
+                block = {};
+                name = mpl.image;
+                mpl_internal_append_slot(mpl, block, name, null);
+                mpl_internal_get_token(mpl /* <symbolic name> */);
+                /* the keyword 'in' is already checked above */
+                xassert(mpl.token == T_IN);
+                mpl_internal_get_token(mpl /* in */);
+                /* <basic expression> that follows the keyword 'in' will be
+                 parsed below */
+            }
+
+        }
+        else if (mpl.token == T_LEFT)
+        {  /* it is the left parenthesis; parse expression that begins
+         with this parenthesis (the flag is set in order to allow
+         recognizing slices; see the routine expression_list) */
+            mpl.flag_x = 1;
+            code = mpl_internal_expression_9(mpl);
+            if (code.op == O_SLICE)
+            {
+                /* this is a slice; besides the corresponding domain block
+                 is already created by expression_list() */
+                block = code.arg.slice;
+                code = null; /* <basic expression> is not parsed yet */
+                /* the keyword 'in' following the slice is already checked
+                 by expression_list() */
+                xassert(mpl.token == T_IN);
+                mpl_internal_get_token(mpl /* in */);
+                /* <basic expression> that follows the keyword 'in' will be
+                 parsed below */
+            }
+        }
+
+        /* parse expression that follows either the keyword 'in' (in
+         which case it can be <basic expression) or the left brace
+         (in which case it can be <basic expression> as well as the
+         very first <member expression> in <literal set>); note that
+         this expression can be already parsed above */
+        if (code == null) code = mpl_internal_expression_9(mpl);
+        /* check the type of the expression just parsed */
+        if (code.type != A_ELEMSET)
+        {  /* it is not <basic expression> and therefore it can only
+         be the very first <member expression> in <literal set>;
+         however, then there must be no dummy index neither slice
+         between the left brace and this expression */
+            if (block != null)
+                mpl_internal_error(mpl, "domain expression has invalid type");
+            /* parse the rest part of <literal set> and make this set
+             be <basic expression>, i.e. the construction {a, b, c}
+             is parsed as it were written as {A}, where A = {a, b, c}
+             is a temporary elemental set */
+            code = mpl_internal_literal_set(mpl, code);
+        }
+        /* now pseudo-code for <basic set> has been built */
+        xassert(code != null);
+        xassert(code.type == A_ELEMSET);
+        xassert(code.dim > 0);
+        /* if domain block for the current <indexing element> is still
+         not created, create it for fake slice of the same dimension
+         as <basic set> */
+        if (block == null)
+        {  var j;
+            block = {};
+            for (j = 1; j <= code.dim; j++)
+                mpl_internal_append_slot(mpl, block, null, null);
+        }
+        /* number of indexing positions in <indexing element> must be
+         the same as dimension of n-tuples in basic set */
+        {  var dim = 0;
+            for (slot = block.list; slot != null; slot = slot.next)
+                dim++;
+            if (dim != code.dim)
+                mpl_internal_error(mpl, dim + " " + (dim == 1 ? "index" : "indices") + " specified for set of dimension " + code.dim);
+        }
+        /* store pseudo-code for <basic set> in the domain block */
+        xassert(block.code == null);
+        block.code = code;
+        /* and append the domain block to the domain */
+        mpl_internal_append_block(mpl, domain, block);
+        /* the current <indexing element> has been completely parsed;
+         include all its dummy indices into the symbolic name table
+         to make them available for referencing from expressions;
+         implicit declarations of dummy indices remain valid while
+         the corresponding domain scope is valid */
+        for (slot = block.list; slot != null; slot = slot.next)
+            if (slot.name != null)
+            {  var node;
+                xassert(mpl.tree[slot.name] == null);
+                mpl.tree[slot.name] = node = {type: A_INDEX, link: slot};
+            }
+        /* check a token that follows <indexing element> */
+        if (mpl.token == T_COMMA)
+            mpl_internal_get_token(mpl /* , */);
+        else if (mpl.token == T_COLON || mpl.token == T_RBRACE)
+            break;
+        else
+            mpl_internal_error(mpl, "syntax error in indexing expression");
+    }
+    /* parse <logical expression> that follows the colon */
+    if (mpl.token == T_COLON)
+    {  mpl_internal_get_token(mpl /* : */);
+        code = mpl_internal_expression_13(mpl);
+        /* convert the expression to logical type, if necessary */
+        if (code.type == A_SYMBOLIC)
+            code = mpl_internal_make_unary(mpl, O_CVTNUM, code, A_NUMERIC, 0);
+        if (code.type == A_NUMERIC)
+            code = mpl_internal_make_unary(mpl, O_CVTLOG, code, A_LOGICAL, 0);
+        /* now the expression must be of logical type */
+        if (code.type != A_LOGICAL)
+            mpl_internal_error(mpl, "expression following colon has invalid type");
+        xassert(code.dim == 0);
+        domain.code = code;
+        /* the right brace must follow the logical expression */
+        if (mpl.token != T_RBRACE)
+            mpl_internal_error(mpl, "syntax error in indexing expression");
+    }
+    mpl_internal_get_token(mpl /* } */);
+    return domain;
+}
+
+function mpl_internal_close_scope(mpl, domain){
+    var block;
+    var slot;
+    var node;
+    xassert(domain != null);
+    /* remove all dummy indices from the symbolic names table */
+    for (block = domain.list; block != null; block = block.next)
+    {  for (slot = block.list; slot != null; slot = slot.next)
+    {  if (slot.name != null)
+    {   node = mpl.tree[slot.name];
+        xassert(node != null);
+        xassert(node.type == A_INDEX);
+        delete mpl.tree[slot.name];
+    }
+    }
+    }
+}
+
+function mpl_internal_link_up(code)
+{     /* if we have something like sum{(i+1,j,k-1) in E} x[i,j,k],
+ where i and k are dummy indices defined out of the iterated
+ expression, we should link up pseudo-code for computing i+1
+ and k-1 to pseudo-code for computing the iterated expression;
+ this is needed to invalidate current value of the iterated
+ expression once i or k have been changed */
+    var block;
+    var slot;
+    for (block = code.arg.loop.domain.list; block != null;
+         block = block.next)
+    {  for (slot = block.list; slot != null; slot = slot.next)
+    {  if (slot.code != null)
+    {  xassert(slot.code.up == null);
+        slot.code.up = code;
+    }
+    }
+    }
+}
+
+function mpl_internal_iterated_expression(mpl){
+    var code;
+    var arg = mpl_internal_create_operands();
+    var op;
+    var opstr; // 8
+    /* determine operation code */
+    xassert(mpl.token == T_NAME);
+    if (mpl.image == "sum")
+        op = O_SUM;
+    else if (mpl.image == "prod")
+        op = O_PROD;
+    else if (mpl.image == "min")
+        op = O_MINIMUM;
+    else if (mpl.image == "max")
+        op = O_MAXIMUM;
+    else if (mpl.image == "forall")
+        op = O_FORALL;
+    else if (mpl.image == "exists")
+        op = O_EXISTS;
+    else if (mpl.image == "setof")
+        op = O_SETOF;
+    else
+        mpl_internal_error(mpl, "operator " + mpl.image + " unknown");
+    opstr = mpl.image;
+    xassert(opstr.length < 8);
+    mpl_internal_get_token(mpl /* <symbolic name> */);
+    /* check the left brace that follows the operator name */
+    xassert(mpl.token == T_LBRACE);
+    /* parse indexing expression that controls iterating */
+    arg.loop.domain = mpl_internal_indexing_expression(mpl);
+
+    function err(){
+        mpl_internal_error(mpl, "integrand following " + opstr + "{...} has invalid type");
+    }
+
+    /* parse "integrand" expression and generate pseudo-code */
+    switch (op)
+    {  case O_SUM:
+        case O_PROD:
+        case O_MINIMUM:
+        case O_MAXIMUM:
+            arg.loop.x = mpl_internal_expression_3(mpl);
+            /* convert the integrand to numeric type, if necessary */
+            if (arg.loop.x.type == A_SYMBOLIC)
+                arg.loop.x = mpl_internal_make_unary(mpl, O_CVTNUM, arg.loop.x,
+                    A_NUMERIC, 0);
+            /* now the integrand must be of numeric type or linear form
+             (the latter is only allowed for the sum operator) */
+            if (!(arg.loop.x.type == A_NUMERIC ||
+                op == O_SUM && arg.loop.x.type == A_FORMULA))
+                err();
+            xassert(arg.loop.x.dim == 0);
+            /* generate pseudo-code */
+            code = mpl_internal_make_code(mpl, op, arg, arg.loop.x.type, 0);
+            break;
+        case O_FORALL:
+        case O_EXISTS:
+            arg.loop.x = mpl_internal_expression_12(mpl);
+            /* convert the integrand to logical type, if necessary */
+            if (arg.loop.x.type == A_SYMBOLIC)
+                arg.loop.x = mpl_internal_make_unary(mpl, O_CVTNUM, arg.loop.x,
+                    A_NUMERIC, 0);
+            if (arg.loop.x.type == A_NUMERIC)
+                arg.loop.x = mpl_internal_make_unary(mpl, O_CVTLOG, arg.loop.x,
+                    A_LOGICAL, 0);
+            /* now the integrand must be of logical type */
+            if (arg.loop.x.type != A_LOGICAL) err();
+            xassert(arg.loop.x.dim == 0);
+            /* generate pseudo-code */
+            code = mpl_internal_make_code(mpl, op, arg, A_LOGICAL, 0);
+            break;
+        case O_SETOF:
+            arg.loop.x = mpl_internal_expression_5(mpl);
+            /* convert the integrand to 1-tuple, if necessary */
+            if (arg.loop.x.type == A_NUMERIC)
+                arg.loop.x = mpl_internal_make_unary(mpl, O_CVTSYM, arg.loop.x,
+                    A_SYMBOLIC, 0);
+            if (arg.loop.x.type == A_SYMBOLIC)
+                arg.loop.x = mpl_internal_make_unary(mpl, O_CVTTUP, arg.loop.x,
+                    A_TUPLE, 1);
+            /* now the integrand must be n-tuple */
+            if (arg.loop.x.type != A_TUPLE) err();
+            xassert(arg.loop.x.dim > 0);
+            /* generate pseudo-code */
+            code = mpl_internal_make_code(mpl, op, arg, A_ELEMSET, arg.loop.x.dim);
+            break;
+        default:
+            xassert(op != op);
+    }
+    /* close the scope of the indexing expression */
+    mpl_internal_close_scope(mpl, arg.loop.domain);
+    mpl_internal_link_up(code);
+    return code;
+}
+
+function mpl_internal_domain_arity(mpl, domain){
+    var arity = 0;
+
+    for (var block = domain.list; block != null; block = block.next)
+        for (var slot = block.list; slot != null; slot = slot.next)
+            if (slot.code == null) arity++;
+    return arity;
+}
+
+function mpl_internal_set_expression(mpl){
+    var code;
+    var arg = mpl_internal_create_operands();
+    xassert(mpl.token == T_LBRACE);
+    mpl_internal_get_token(mpl /* { */);
+    /* check a token that follows the left brace */
+    if (mpl.token == T_RBRACE)
+    {  /* it is the right brace, so the resultant is an empty set of
+     dimension 1 */
+        arg.list = null;
+        /* generate pseudo-code to build the resultant set */
+        code = mpl_internal_make_code(mpl, O_MAKE, arg, A_ELEMSET, 1);
+        mpl_internal_get_token(mpl /* } */);
+    }
+    else
+    {  /* the next token begins an indexing expression */
+        mpl_internal_unget_token(mpl);
+        arg.loop.domain = mpl_internal_indexing_expression(mpl);
+        arg.loop.x = null; /* integrand is not used */
+        /* close the scope of the indexing expression */
+        mpl_internal_close_scope(mpl, arg.loop.domain);
+        /* generate pseudo-code to build the resultant set */
+        code = mpl_internal_make_code(mpl, O_BUILD, arg, A_ELEMSET,
+            mpl_internal_domain_arity(mpl, arg.loop.domain));
+        mpl_internal_link_up(code);
+    }
+    return code;
+}
+
+function mpl_internal_branched_expression(mpl){
+    var x, y, z;
+    xassert(mpl.token == T_IF);
+    mpl_internal_get_token(mpl /* if */);
+    /* parse <logical expression> that follows 'if' */
+    x = mpl_internal_expression_13(mpl);
+    /* convert the expression to logical type, if necessary */
+    if (x.type == A_SYMBOLIC)
+        x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+    if (x.type == A_NUMERIC)
+        x = mpl_internal_make_unary(mpl, O_CVTLOG, x, A_LOGICAL, 0);
+    /* now the expression must be of logical type */
+    if (x.type != A_LOGICAL)
+        mpl_internal_error(mpl, "expression following if has invalid type");
+    xassert(x.dim == 0);
+    /* the keyword 'then' must follow the logical expression */
+    if (mpl.token != T_THEN)
+        mpl_internal_error(mpl, "keyword then missing where expected");
+    mpl_internal_get_token(mpl /* then */);
+    /* parse <expression> that follows 'then' and check its type */
+    y = mpl_internal_expression_9(mpl);
+    if (!(y.type == A_NUMERIC || y.type == A_SYMBOLIC ||
+        y.type == A_ELEMSET || y.type == A_FORMULA))
+        mpl_internal_error(mpl, "expression following then has invalid type");
+    /* if the expression that follows the keyword 'then' is elemental
+     set, the keyword 'else' cannot be omitted; otherwise else-part
+     is optional */
+    if (mpl.token != T_ELSE)
+    {  if (y.type == A_ELEMSET)
+        mpl_internal_error(mpl, "keyword else missing where expected");
+        z = null;
+    } else {
+        mpl_internal_get_token(mpl /* else */);
+        /* parse <expression> that follow 'else' and check its type */
+        z = mpl_internal_expression_9(mpl);
+        if (!(z.type == A_NUMERIC || z.type == A_SYMBOLIC ||
+            z.type == A_ELEMSET || z.type == A_FORMULA))
+            mpl_internal_error(mpl, "expression following else has invalid type");
+        /* convert to identical types, if necessary */
+        if (y.type == A_FORMULA || z.type == A_FORMULA)
+        {  if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+            if (y.type == A_NUMERIC)
+                y = mpl_internal_make_unary(mpl, O_CVTLFM, y, A_FORMULA, 0);
+            if (z.type == A_SYMBOLIC)
+                z = mpl_internal_make_unary(mpl, O_CVTNUM, z, A_NUMERIC, 0);
+            if (z.type == A_NUMERIC)
+                z = mpl_internal_make_unary(mpl, O_CVTLFM, z, A_FORMULA, 0);
+        }
+        if (y.type == A_SYMBOLIC || z.type == A_SYMBOLIC)
+        {  if (y.type == A_NUMERIC)
+            y = mpl_internal_make_unary(mpl, O_CVTSYM, y, A_SYMBOLIC, 0);
+            if (z.type == A_NUMERIC)
+                z = mpl_internal_make_unary(mpl, O_CVTSYM, z, A_SYMBOLIC, 0);
+        }
+        /* now both expressions must have identical types */
+        if (y.type != z.type)
+            mpl_internal_error(mpl, "expressions following then and else have incompatible types");
+        /* and identical dimensions */
+        if (y.dim != z.dim)
+            mpl_internal_error(mpl, "expressions following then and else have different" +
+                " dimensions " + y.dim + " and " + z.dim + ", respectively");
+    }
+
+    /* generate pseudo-code to perform branching */
+    return mpl_internal_make_ternary(mpl, O_FORK, x, y, z, y.type, y.dim);
+}
+
+function mpl_internal_primary_expression(mpl){
+    var code;
+    if (mpl.token == T_NUMBER)
+    {  /* parse numeric literal */
+        code = mpl_internal_numeric_literal(mpl);
+    }
+    else if (mpl.token == T_INFINITY)
+    {  /* parse "infinity" */
+        var arg = mpl_internal_create_operands();
+        arg.num = DBL_MAX;
+        code = mpl_internal_make_code(mpl, O_NUMBER, arg, A_NUMERIC, 0);
+        mpl_internal_get_token(mpl /* Infinity */);
+    }
+    else if (mpl.token == T_STRING)
+    {  /* parse string literal */
+        code = mpl_internal_string_literal(mpl);
+    }
+    else if (mpl.token == T_NAME)
+    {   var next_token;
+        mpl_internal_get_token(mpl /* <symbolic name> */);
+        next_token = mpl.token;
+        mpl_internal_unget_token(mpl);
+        /* check a token that follows <symbolic name> */
+        switch (next_token)
+        {  case T_LBRACKET:
+            /* parse reference to subscripted object */
+            code = mpl_internal_object_reference(mpl);
+            break;
+            case T_LEFT:
+                /* parse reference to built-in function */
+                code = mpl_internal_function_reference(mpl);
+                break;
+            case T_LBRACE:
+                /* parse iterated expression */
+                code = mpl_internal_iterated_expression(mpl);
+                break;
+            default:
+                /* parse reference to unsubscripted object */
+                code = mpl_internal_object_reference(mpl);
+                break;
+        }
+    }
+    else if (mpl.token == T_LEFT)
+    {  /* parse parenthesized expression */
+        code = mpl_internal_expression_list(mpl);
+    }
+    else if (mpl.token == T_LBRACE)
+    {  /* parse set expression */
+        code = mpl_internal_set_expression(mpl);
+    }
+    else if (mpl.token == T_IF)
+    {  /* parse conditional expression */
+        code = mpl_internal_branched_expression(mpl);
+    }
+    else if (mpl_internal_is_reserved(mpl))
+    {  /* other reserved keywords cannot be used here */
+        mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+    }
+    else
+        mpl_internal_error(mpl, "syntax error in expression");
+    return code;
+}
+
+function mpl_internal_error_preceding(mpl, opstr){
+    mpl_internal_error(mpl, "operand preceding " + opstr + " has invalid type");
+    /* no return */
+}
+
+function mpl_internal_error_following(mpl, opstr)
+{     mpl_internal_error(mpl, "operand following " + opstr + " has invalid type");
+    /* no return */
+}
+
+function mpl_internal_error_dimension(mpl, opstr, dim1, dim2)
+{     mpl_internal_error(mpl, "operands preceding and following " + opstr + " have different di"+
+    "mensions " + dim1 + " and " + dim2 + ", respectively");
+    /* no return */
+}
+
+function mpl_internal_expression_0(mpl){
+    return mpl_internal_primary_expression(mpl);
+}
+
+function mpl_internal_expression_1(mpl){
+    var y;
+    var x = mpl_internal_expression_0(mpl);
+    if (mpl.token == T_POWER)
+    {   var opstr = mpl.image;
+        xassert(opstr.length < 8);
+        if (x.type == A_SYMBOLIC)
+            x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (x.type != A_NUMERIC)
+            mpl_internal_error_preceding(mpl, opstr);
+        mpl_internal_get_token(mpl /* ^ | ** */);
+        if (mpl.token == T_PLUS || mpl.token == T_MINUS)
+            y = mpl_internal_expression_2(mpl);
+        else
+            y = mpl_internal_expression_1(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (y.type != A_NUMERIC)
+            mpl_internal_error_following(mpl, opstr);
+        x = mpl_internal_make_binary(mpl, O_POWER, x, y, A_NUMERIC, 0);
+    }
+    return x;
+}
+
+function mpl_internal_expression_2(mpl){
+    var x;
+    if (mpl.token == T_PLUS)
+    {  mpl_internal_get_token(mpl /* + */);
+        x = mpl_internal_expression_1(mpl);
+        if (x.type == A_SYMBOLIC)
+            x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (!(x.type == A_NUMERIC || x.type == A_FORMULA))
+            mpl_internal_error_following(mpl, "+");
+        x = mpl_internal_make_unary(mpl, O_PLUS, x, x.type, 0);
+    }
+    else if (mpl.token == T_MINUS)
+    {  mpl_internal_get_token(mpl /* - */);
+        x = mpl_internal_expression_1(mpl);
+        if (x.type == A_SYMBOLIC)
+            x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (!(x.type == A_NUMERIC || x.type == A_FORMULA))
+            mpl_internal_error_following(mpl, "-");
+        x = mpl_internal_make_unary(mpl, O_MINUS, x, x.type, 0);
+    }
+    else
+        x = mpl_internal_expression_1(mpl);
+    return x;
+}
+
+function mpl_internal_expression_3(mpl){
+    var y;
+    var x = mpl_internal_expression_2(mpl);
+    for (;;)
+    {  if (mpl.token == T_ASTERISK)
+    {  if (x.type == A_SYMBOLIC)
+        x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (!(x.type == A_NUMERIC || x.type == A_FORMULA))
+            mpl_internal_error_preceding(mpl, "*");
+        mpl_internal_get_token(mpl /* * */);
+        y = mpl_internal_expression_2(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (!(y.type == A_NUMERIC || y.type == A_FORMULA))
+            mpl_internal_error_following(mpl, "*");
+        if (x.type == A_FORMULA && y.type == A_FORMULA)
+            mpl_internal_error(mpl, "multiplication of linear forms not allowed");
+        if (x.type == A_NUMERIC && y.type == A_NUMERIC)
+            x = mpl_internal_make_binary(mpl, O_MUL, x, y, A_NUMERIC, 0);
+        else
+            x = mpl_internal_make_binary(mpl, O_MUL, x, y, A_FORMULA, 0);
+    }
+    else if (mpl.token == T_SLASH)
+    {  if (x.type == A_SYMBOLIC)
+        x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (!(x.type == A_NUMERIC || x.type == A_FORMULA))
+            mpl_internal_error_preceding(mpl, "/");
+        mpl_internal_get_token(mpl /* / */);
+        y = mpl_internal_expression_2(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (y.type != A_NUMERIC)
+            mpl_internal_error_following(mpl, "/");
+        if (x.type == A_NUMERIC)
+            x = mpl_internal_make_binary(mpl, O_DIV, x, y, A_NUMERIC, 0);
+        else
+            x = mpl_internal_make_binary(mpl, O_DIV, x, y, A_FORMULA, 0);
+    }
+    else if (mpl.token == T_DIV)
+    {  if (x.type == A_SYMBOLIC)
+        x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (x.type != A_NUMERIC)
+            mpl_internal_error_preceding(mpl, "div");
+        mpl_internal_get_token(mpl /* div */);
+        y = mpl_internal_expression_2(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (y.type != A_NUMERIC)
+            mpl_internal_error_following(mpl, "div");
+        x = mpl_internal_make_binary(mpl, O_IDIV, x, y, A_NUMERIC, 0);
+    }
+    else if (mpl.token == T_MOD)
+    {  if (x.type == A_SYMBOLIC)
+        x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (x.type != A_NUMERIC)
+            mpl_internal_error_preceding(mpl, "mod");
+        mpl_internal_get_token(mpl /* mod */);
+        y = mpl_internal_expression_2(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (y.type != A_NUMERIC)
+            mpl_internal_error_following(mpl, "mod");
+        x = mpl_internal_make_binary(mpl, O_MOD, x, y, A_NUMERIC, 0);
+    }
+    else
+        break;
+    }
+    return x;
+}
+
+function mpl_internal_expression_4(mpl){
+    var y;
+    var x = mpl_internal_expression_3(mpl);
+    for (;;)
+    {  if (mpl.token == T_PLUS)
+    {  if (x.type == A_SYMBOLIC)
+        x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (!(x.type == A_NUMERIC || x.type == A_FORMULA))
+            mpl_internal_error_preceding(mpl, "+");
+        mpl_internal_get_token(mpl /* + */);
+        y = mpl_internal_expression_3(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (!(y.type == A_NUMERIC || y.type == A_FORMULA))
+            mpl_internal_error_following(mpl, "+");
+        if (x.type == A_NUMERIC && y.type == A_FORMULA)
+            x = mpl_internal_make_unary(mpl, O_CVTLFM, x, A_FORMULA, 0);
+        if (x.type == A_FORMULA && y.type == A_NUMERIC)
+            y = mpl_internal_make_unary(mpl, O_CVTLFM, y, A_FORMULA, 0);
+        x = mpl_internal_make_binary(mpl, O_ADD, x, y, x.type, 0);
+    }
+    else if (mpl.token == T_MINUS)
+    {  if (x.type == A_SYMBOLIC)
+        x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (!(x.type == A_NUMERIC || x.type == A_FORMULA))
+            mpl_internal_error_preceding(mpl, "-");
+        mpl_internal_get_token(mpl /* - */);
+        y = mpl_internal_expression_3(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (!(y.type == A_NUMERIC || y.type == A_FORMULA))
+            mpl_internal_error_following(mpl, "-");
+        if (x.type == A_NUMERIC && y.type == A_FORMULA)
+            x = mpl_internal_make_unary(mpl, O_CVTLFM, x, A_FORMULA, 0);
+        if (x.type == A_FORMULA && y.type == A_NUMERIC)
+            y = mpl_internal_make_unary(mpl, O_CVTLFM, y, A_FORMULA, 0);
+        x = mpl_internal_make_binary(mpl, O_SUB, x, y, x.type, 0);
+    }
+    else if (mpl.token == T_LESS)
+    {  if (x.type == A_SYMBOLIC)
+        x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (x.type != A_NUMERIC)
+            mpl_internal_error_preceding(mpl, "less");
+        mpl_internal_get_token(mpl /* less */);
+        y = mpl_internal_expression_3(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (y.type != A_NUMERIC)
+            mpl_internal_error_following(mpl, "less");
+        x = mpl_internal_make_binary(mpl, O_LESS, x, y, A_NUMERIC, 0);
+    }
+    else
+        break;
+    }
+    return x;
+}
+
+function mpl_internal_expression_5(mpl){
+    var y;
+    var x = mpl_internal_expression_4(mpl);
+    for (;;)
+    {  if (mpl.token == T_CONCAT)
+    {  if (x.type == A_NUMERIC)
+        x = mpl_internal_make_unary(mpl, O_CVTSYM, x, A_SYMBOLIC, 0);
+        if (x.type != A_SYMBOLIC)
+            mpl_internal_error_preceding(mpl, "&");
+        mpl_internal_get_token(mpl /* & */);
+        y = mpl_internal_expression_4(mpl);
+        if (y.type == A_NUMERIC)
+            y = mpl_internal_make_unary(mpl, O_CVTSYM, y, A_SYMBOLIC, 0);
+        if (y.type != A_SYMBOLIC)
+            mpl_internal_error_following(mpl, "&");
+        x = mpl_internal_make_binary(mpl, O_CONCAT, x, y, A_SYMBOLIC, 0);
+    }
+    else
+        break;
+    }
+    return x;
+}
+
+function mpl_internal_expression_6(mpl){
+    var y, z;
+    var x = mpl_internal_expression_5(mpl);
+    if (mpl.token == T_DOTS)
+    {  if (x.type == A_SYMBOLIC)
+        x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (x.type != A_NUMERIC)
+            mpl_internal_error_preceding(mpl, "..");
+        mpl_internal_get_token(mpl /* .. */);
+        y = mpl_internal_expression_5(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (y.type != A_NUMERIC)
+            mpl_internal_error_following(mpl, "..");
+        if (mpl.token == T_BY)
+        {  mpl_internal_get_token(mpl /* by */);
+            z = mpl_internal_expression_5(mpl);
+            if (z.type == A_SYMBOLIC)
+                z = mpl_internal_make_unary(mpl, O_CVTNUM, z, A_NUMERIC, 0);
+            if (z.type != A_NUMERIC)
+                mpl_internal_error_following(mpl, "by");
+        }
+        else
+            z = null;
+        x = mpl_internal_make_ternary(mpl, O_DOTS, x, y, z, A_ELEMSET, 1);
+    }
+    return x;
+}
+
+function mpl_internal_expression_7(mpl){
+    var y;
+    var x = mpl_internal_expression_6(mpl);
+    for (;;)
+    {  if (mpl.token == T_CROSS)
+    {  if (x.type != A_ELEMSET)
+        mpl_internal_error_preceding(mpl, "cross");
+        mpl_internal_get_token(mpl /* cross */);
+        y = mpl_internal_expression_6(mpl);
+        if (y.type != A_ELEMSET)
+            mpl_internal_error_following(mpl, "cross");
+        x = mpl_internal_make_binary(mpl, O_CROSS, x, y, A_ELEMSET,
+            x.dim + y.dim);
+    }
+    else
+        break;
+    }
+    return x;
+}
+
+function mpl_internal_expression_8(mpl){
+    var y;
+    var x = mpl_internal_expression_7(mpl);
+    for (;;)
+    {  if (mpl.token == T_INTER)
+    {  if (x.type != A_ELEMSET)
+        mpl_internal_error_preceding(mpl, "inter");
+        mpl_internal_get_token(mpl /* inter */);
+        y = mpl_internal_expression_7(mpl);
+        if (y.type != A_ELEMSET)
+            mpl_internal_error_following(mpl, "inter");
+        if (x.dim != y.dim)
+            mpl_internal_error_dimension(mpl, "inter", x.dim, y.dim);
+        x = mpl_internal_make_binary(mpl, O_INTER, x, y, A_ELEMSET, x.dim);
+    }
+    else
+        break;
+    }
+    return x;
+}
+
+function mpl_internal_expression_9(mpl){
+    var y;
+    var x = mpl_internal_expression_8(mpl);
+    for (;;)
+    {  if (mpl.token == T_UNION)
+    {  if (x.type != A_ELEMSET)
+        mpl_internal_error_preceding(mpl, "union");
+        mpl_internal_get_token(mpl /* union */);
+        y = mpl_internal_expression_8(mpl);
+        if (y.type != A_ELEMSET)
+            mpl_internal_error_following(mpl, "union");
+        if (x.dim != y.dim)
+            mpl_internal_error_dimension(mpl, "union", x.dim, y.dim);
+        x = mpl_internal_make_binary(mpl, O_UNION, x, y, A_ELEMSET, x.dim);
+    }
+    else if (mpl.token == T_DIFF)
+    {  if (x.type != A_ELEMSET)
+        mpl_internal_error_preceding(mpl, "diff");
+        mpl_internal_get_token(mpl /* diff */);
+        y = mpl_internal_expression_8(mpl);
+        if (y.type != A_ELEMSET)
+            mpl_internal_error_following(mpl, "diff");
+        if (x.dim != y.dim)
+            mpl_internal_error_dimension(mpl, "diff", x.dim, y.dim);
+        x = mpl_internal_make_binary(mpl, O_DIFF, x, y, A_ELEMSET, x.dim);
+    }
+    else if (mpl.token == T_SYMDIFF)
+    {  if (x.type != A_ELEMSET)
+        mpl_internal_error_preceding(mpl, "symdiff");
+        mpl_internal_get_token(mpl /* symdiff */);
+        y = mpl_internal_expression_8(mpl);
+        if (y.type != A_ELEMSET)
+            mpl_internal_error_following(mpl, "symdiff");
+        if (x.dim != y.dim)
+            mpl_internal_error_dimension(mpl, "symdiff", x.dim, y.dim);
+        x = mpl_internal_make_binary(mpl, O_SYMDIFF, x, y, A_ELEMSET, x.dim);
+    }
+    else
+        break;
+    }
+    return x;
+}
+
+function mpl_internal_expression_10(mpl){
+    var y;
+    var op = -1;
+    var opstr = ""; // [16];
+    var x = mpl_internal_expression_9(mpl);
+    switch (mpl.token)
+    {  case T_LT:
+        op = O_LT; break;
+        case T_LE:
+            op = O_LE; break;
+        case T_EQ:
+            op = O_EQ; break;
+        case T_GE:
+            op = O_GE; break;
+        case T_GT:
+            op = O_GT; break;
+        case T_NE:
+            op = O_NE; break;
+        case T_IN:
+            op = O_IN; break;
+        case T_WITHIN:
+            op = O_WITHIN; break;
+        case T_NOT:
+            opstr = mpl.image;
+            mpl_internal_get_token(mpl /* not | ! */);
+            if (mpl.token == T_IN)
+                op = O_NOTIN;
+            else if (mpl.token == T_WITHIN)
+                op = O_NOTWITHIN;
+            else
+                mpl_internal_error(mpl, "invalid use of " + opstr);
+            opstr += " ";
+            break;
+        default:
+            return x;
+    }
+    opstr += mpl.image;
+    xassert(opstr.length < 16);
+    switch (op)
+    {  case O_EQ:
+        case O_NE:
+        case O_LT:
+        case O_LE:
+        case O_GT:
+        case O_GE:
+            if (!(x.type == A_NUMERIC || x.type == A_SYMBOLIC))
+                mpl_internal_error_preceding(mpl, opstr);
+            mpl_internal_get_token(mpl /* <rho> */);
+            y = mpl_internal_expression_9(mpl);
+            if (!(y.type == A_NUMERIC || y.type == A_SYMBOLIC))
+                mpl_internal_error_following(mpl, opstr);
+            if (x.type == A_NUMERIC && y.type == A_SYMBOLIC)
+                x = mpl_internal_make_unary(mpl, O_CVTSYM, x, A_SYMBOLIC, 0);
+            if (x.type == A_SYMBOLIC && y.type == A_NUMERIC)
+                y = mpl_internal_make_unary(mpl, O_CVTSYM, y, A_SYMBOLIC, 0);
+            x = mpl_internal_make_binary(mpl, op, x, y, A_LOGICAL, 0);
+            break;
+        case O_IN:
+        case O_NOTIN:
+            if (x.type == A_NUMERIC)
+                x = mpl_internal_make_unary(mpl, O_CVTSYM, x, A_SYMBOLIC, 0);
+            if (x.type == A_SYMBOLIC)
+                x = mpl_internal_make_unary(mpl, O_CVTTUP, x, A_TUPLE, 1);
+            if (x.type != A_TUPLE)
+                mpl_internal_error_preceding(mpl, opstr);
+            mpl_internal_get_token(mpl /* <rho> */);
+            y = mpl_internal_expression_9(mpl);
+            if (y.type != A_ELEMSET)
+                mpl_internal_error_following(mpl, opstr);
+            if (x.dim != y.dim)
+                mpl_internal_error_dimension(mpl, opstr, x.dim, y.dim);
+            x = mpl_internal_make_binary(mpl, op, x, y, A_LOGICAL, 0);
+            break;
+        case O_WITHIN:
+        case O_NOTWITHIN:
+            if (x.type != A_ELEMSET)
+                mpl_internal_error_preceding(mpl, opstr);
+            mpl_internal_get_token(mpl /* <rho> */);
+            y = mpl_internal_expression_9(mpl);
+            if (y.type != A_ELEMSET)
+                mpl_internal_error_following(mpl, opstr);
+            if (x.dim != y.dim)
+                mpl_internal_error_dimension(mpl, opstr, x.dim, y.dim);
+            x = mpl_internal_make_binary(mpl, op, x, y, A_LOGICAL, 0);
+            break;
+        default:
+            xassert(op != op);
+    }
+    return x;
+}
+
+function mpl_internal_expression_11(mpl){
+    var x;
+    var opstr; //[8];
+    if (mpl.token == T_NOT)
+    {   opstr = mpl.image;
+        xassert(opstr.length < 8);
+        mpl_internal_get_token(mpl /* not | ! */);
+        x = mpl_internal_expression_10(mpl);
+        if (x.type == A_SYMBOLIC)
+            x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (x.type == A_NUMERIC)
+            x = mpl_internal_make_unary(mpl, O_CVTLOG, x, A_LOGICAL, 0);
+        if (x.type != A_LOGICAL)
+            mpl_internal_error_following(mpl, opstr);
+        x = mpl_internal_make_unary(mpl, O_NOT, x, A_LOGICAL, 0);
+    }
+    else
+        x = mpl_internal_expression_10(mpl);
+    return x;
+}
+
+function mpl_internal_expression_12(mpl){
+    var y;
+    var opstr = ""; //[8];
+    var x = mpl_internal_expression_11(mpl);
+    for (;;)
+    {  if (mpl.token == T_AND)
+    {   opstr = mpl.image;
+        xassert(opstr.length < 8);
+        if (x.type == A_SYMBOLIC)
+            x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (x.type == A_NUMERIC)
+            x = mpl_internal_make_unary(mpl, O_CVTLOG, x, A_LOGICAL, 0);
+        if (x.type != A_LOGICAL)
+            mpl_internal_error_preceding(mpl, opstr);
+        mpl_internal_get_token(mpl /* and | && */);
+        y = mpl_internal_expression_11(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (y.type == A_NUMERIC)
+            y = mpl_internal_make_unary(mpl, O_CVTLOG, y, A_LOGICAL, 0);
+        if (y.type != A_LOGICAL)
+            mpl_internal_error_following(mpl, opstr);
+        x = mpl_internal_make_binary(mpl, O_AND, x, y, A_LOGICAL, 0);
+    }
+    else
+        break;
+    }
+    return x;
+}
+
+function mpl_internal_expression_13(mpl){
+    var y;
+    var x = mpl_internal_expression_12(mpl);
+    for (;;)
+    {   if (mpl.token == T_OR)
+    {   var opstr = mpl.image;
+        xassert(opstr.length < 8);
+        if (x.type == A_SYMBOLIC)
+            x = mpl_internal_make_unary(mpl, O_CVTNUM, x, A_NUMERIC, 0);
+        if (x.type == A_NUMERIC)
+            x = mpl_internal_make_unary(mpl, O_CVTLOG, x, A_LOGICAL, 0);
+        if (x.type != A_LOGICAL)
+            mpl_internal_error_preceding(mpl, opstr);
+        mpl_internal_get_token(mpl /* or | || */);
+        y = mpl_internal_expression_12(mpl);
+        if (y.type == A_SYMBOLIC)
+            y = mpl_internal_make_unary(mpl, O_CVTNUM, y, A_NUMERIC, 0);
+        if (y.type == A_NUMERIC)
+            y = mpl_internal_make_unary(mpl, O_CVTLOG, y, A_LOGICAL, 0);
+        if (y.type != A_LOGICAL)
+            mpl_internal_error_following(mpl, opstr);
+        x = mpl_internal_make_binary(mpl, O_OR, x, y, A_LOGICAL, 0);
+    }
+    else
+        break;
+    }
+    return x;
+}
+
+function mpl_internal_set_statement(mpl){
+    var set, node;
+    var dimen_used = 0;
+    var gadget;
+
+    function err(){mpl_internal_error(mpl, "at most one := or default/data allowed")}
+    function err1(){mpl_internal_error(mpl, mpl.image + " not a plain set")}
+    function err2(){mpl_internal_error(mpl, "dimension of " + mpl.image + " too small")}
+    function err3(){mpl_internal_error(mpl, "component number must be integer between 1 and " + gadget.set.dimen)};
+
+    xassert(mpl_internal_is_keyword(mpl, "set"));
+    mpl_internal_get_token(mpl /* set */);
+    /* symbolic name must follow the keyword 'set' */
+    if (mpl.token == T_NAME){
+
+    }
+    else if (mpl_internal_is_reserved(mpl))
+        mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+    else
+        mpl_internal_error(mpl, "symbolic name missing where expected");
+    /* there must be no other object with the same name */
+    if (mpl.tree[mpl.image] != null)
+        mpl_internal_error(mpl, mpl.image + " multiply declared");
+    /* create model set */
+    set = {};
+    set.name = mpl.image;
+    set.alias = null;
+    set.dim = 0;
+    set.domain = null;
+    set.dimen = 0;
+    set.within = null;
+    set.assign = null;
+    set.option = null;
+    set.gadget = null;
+    set.data = 0;
+    set.array = null;
+    mpl_internal_get_token(mpl /* <symbolic name> */);
+    /* parse optional alias */
+    if (mpl.token == T_STRING)
+    {   set.alias = mpl.image;
+        mpl_internal_get_token(mpl /* <string literal> */);
+    }
+    /* parse optional indexing expression */
+    if (mpl.token == T_LBRACE)
+    {  set.domain = mpl_internal_indexing_expression(mpl);
+        set.dim = mpl_internal_domain_arity(mpl, set.domain);
+    }
+    /* include the set name in the symbolic names table */
+    {
+        node = mpl.tree[set.name] = {};
+        node.type = A_SET;
+        node.link = set;
+    }
+    /* parse the list of optional attributes */
+    for (;;)
+    {  if (mpl.token == T_COMMA)
+        mpl_internal_get_token(mpl /* , */);
+    else if (mpl.token == T_SEMICOLON)
+        break;
+        if (mpl_internal_is_keyword(mpl, "dimen"))
+        {  /* dimension of set members */
+            var dimen;
+            mpl_internal_get_token(mpl /* dimen */);
+            if (!(mpl.token == T_NUMBER &&
+                1.0 <= mpl.value && mpl.value <= 20.0 &&
+                Math.floor(mpl.value) == mpl.value))
+                mpl_internal_error(mpl, "dimension must be integer between 1 and 20");
+            dimen = (mpl.value + 0.5)|0;
+            if (dimen_used)
+                mpl_internal_error(mpl, "at most one dimension attribute allowed");
+            if (set.dimen > 0)
+                mpl_internal_error(mpl, "dimension " + dimen + " conflicts with dimension " + set.dimen + " already determined");
+            set.dimen = dimen;
+            dimen_used = 1;
+            mpl_internal_get_token(mpl /* <numeric literal> */);
+        }
+        else if (mpl.token == T_WITHIN || mpl.token == T_IN)
+        {  /* restricting superset */
+            var within, temp;
+            if (mpl.token == T_IN && !mpl.as_within)
+            {   mpl_internal_warning(mpl, "keyword in understood as within");
+                mpl.as_within = 1;
+            }
+            mpl_internal_get_token(mpl /* within */);
+            /* create new restricting superset list entry and append it
+             to the within-list */
+            within = {};
+            within.code = null;
+            within.next = null;
+            if (set.within == null)
+                set.within = within;
+            else
+            {   for (temp = set.within; temp.next != null; temp = temp.next){}
+                temp.next = within;
+            }
+            /* parse an expression that follows 'within' */
+            within.code = mpl_internal_expression_9(mpl);
+            if (within.code.type != A_ELEMSET)
+                mpl_internal_error(mpl, "expression following within has invalid type");
+            xassert(within.code.dim > 0);
+            /* check/set dimension of set members */
+            if (set.dimen == 0) set.dimen = within.code.dim;
+            if (set.dimen != within.code.dim)
+                mpl_internal_error(mpl, "set expression following within must have di"+
+                    "mension " + set.dimen + " rather than " + within.code.dim);
+        }
+        else if (mpl.token == T_ASSIGN)
+        {  /* assignment expression */
+            if (!(set.assign == null && set.option == null &&
+                set.gadget == null))
+                err();
+            mpl_internal_get_token(mpl /* := */);
+            /* parse an expression that follows ':=' */
+            set.assign = mpl_internal_expression_9(mpl);
+            if (set.assign.type != A_ELEMSET)
+                mpl_internal_error(mpl, "expression following := has invalid type");
+            xassert(set.assign.dim > 0);
+            /* check/set dimension of set members */
+            if (set.dimen == 0) set.dimen = set.assign.dim;
+            if (set.dimen != set.assign.dim)
+                mpl_internal_error(mpl, "set expression following := must have dimens" +
+                    "ion " + set.dimen + " rather than " + set.assign.dim);
+        }
+        else if (mpl_internal_is_keyword(mpl, "default"))
+        {  /* expression for default value */
+            if (!(set.assign == null && set.option == null)) err();
+            mpl_internal_get_token(mpl /* := */);
+            /* parse an expression that follows 'default' */
+            set.option = mpl_internal_expression_9(mpl);
+            if (set.option.type != A_ELEMSET)
+                mpl_internal_error(mpl, "expression following default has invalid type");
+            xassert(set.option.dim > 0);
+            /* check/set dimension of set members */
+            if (set.dimen == 0) set.dimen = set.option.dim;
+            if (set.dimen != set.option.dim)
+                mpl_internal_error(mpl, "set expression following default must have d" +
+                    "imension " + set.dimen + " rather than " + set.option.dim);
+        }
+        else if (mpl_internal_is_keyword(mpl, "data"))
+        {  /* gadget to initialize the set by data from plain set */
+            var i = 0, k, fff = new Array(20); //[20];
+            if (!(set.assign == null && set.gadget == null)) err();
+            mpl_internal_get_token(mpl /* data */);
+            set.gadget = gadget = {};
+            /* set name must follow the keyword 'data' */
+            if (mpl.token == T_NAME){
+
+            }
+            else if (mpl_internal_is_reserved(mpl))
+                mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+            else
+                mpl_internal_error(mpl, "set name missing where expected");
+            /* find the set in the symbolic name table */
+            node = mpl.tree[mpl.image];
+            if (node == null)
+                mpl_internal_error(mpl, mpl.image + " not defined");
+            if (node.type != A_SET)
+                err1();
+            gadget.set = node.link;
+            if (gadget.set.dim != 0) err1();
+            if (gadget.set == set)
+                mpl_internal_error(mpl, "set cannot be initialized by itself");
+            /* check and set dimensions */
+            if (set.dim >= gadget.set.dimen)
+                err2();
+            if (set.dimen == 0)
+                set.dimen = gadget.set.dimen - set.dim;
+            if (set.dim + set.dimen > gadget.set.dimen)
+                err2();
+            else if (set.dim + set.dimen < gadget.set.dimen)
+                mpl_internal_error(mpl, "dimension of " + mpl.image + " too big");
+            mpl_internal_get_token(mpl /* set name */);
+            /* left parenthesis must follow the set name */
+            if (mpl.token == T_LEFT)
+                mpl_internal_get_token(mpl /* ( */);
+            else
+                mpl_internal_error(mpl, "left parenthesis missing where expected");
+            /* parse permutation of component numbers */
+            for (k = 0; k < gadget.set.dimen; k++) fff[k] = 0;
+            k = 0;
+            for (;;)
+            {  if (mpl.token != T_NUMBER)
+                mpl_internal_error(mpl, "component number missing where expected");
+                if (str2int(mpl.image, function(v){i = v}) != 0)
+                    err3();
+                if (!(1 <= i && i <= gadget.set.dimen)) err3();
+                if (fff[i-1] != 0)
+                    mpl_internal_error(mpl, "component " + i + " multiply specified");
+                gadget.ind[k++] = i; fff[i-1] = 1;
+                xassert(k <= gadget.set.dimen);
+                mpl_internal_get_token(mpl /* number */);
+                if (mpl.token == T_COMMA)
+                    mpl_internal_get_token(mpl /* , */);
+                else if (mpl.token == T_RIGHT)
+                    break;
+                else
+                    mpl_internal_error(mpl, "syntax error in data attribute");
+            }
+            if (k < gadget.set.dimen)
+                mpl_internal_error(mpl, "there are must be " + gadget.set.dimen + " components rather than " + k);
+            mpl_internal_get_token(mpl /* ) */);
+        }
+        else
+            mpl_internal_error(mpl, "syntax error in set statement");
+    }
+    /* close the domain scope */
+    if (set.domain != null) mpl_internal_close_scope(mpl, set.domain);
+    /* if dimension of set members is still unknown, set it to 1 */
+    if (set.dimen == 0) set.dimen = 1;
+    /* the set statement has been completely parsed */
+    xassert(mpl.token == T_SEMICOLON);
+    mpl_internal_get_token(mpl /* ; */);
+    return set;
+}
+
+function mpl_internal_parameter_statement(mpl){
+    var par, temp;
+    var integer_used = 0, binary_used = 0, symbolic_used = 0;
+
+    function process_binary(){
+        if (binary_used)
+            mpl_internal_error(mpl, "at most one binary allowed");
+        if (par.type == A_SYMBOLIC)
+            mpl_internal_error(mpl, "symbolic parameter cannot be binary");
+        par.type = A_BINARY;
+        binary_used = 1;
+        mpl_internal_get_token(mpl /* binary */);
+    }
+
+    function err(){mpl_internal_error(mpl, "at most one := or default allowed")}
+
+    xassert(mpl_internal_is_keyword(mpl, "param"));
+    mpl_internal_get_token(mpl /* param */);
+    /* symbolic name must follow the keyword 'param' */
+    if (mpl.token == T_NAME){
+
+    }
+    else if (mpl_internal_is_reserved(mpl))
+        mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+    else
+        mpl_internal_error(mpl, "symbolic name missing where expected");
+    /* there must be no other object with the same name */
+    if (mpl.tree[mpl.image] != null)
+        mpl_internal_error(mpl, mpl.image + " multiply declared");
+    /* create model parameter */
+    par = {};
+    par.name = mpl.image;
+    par.alias = null;
+    par.dim = 0;
+    par.domain = null;
+    par.type = A_NUMERIC;
+    par.cond = null;
+    par.in = null;
+    par.assign = null;
+    par.option = null;
+    par.data = 0;
+    par.defval = null;
+    par.array = null;
+    mpl_internal_get_token(mpl /* <symbolic name> */);
+    /* parse optional alias */
+    if (mpl.token == T_STRING)
+    {
+        par.alias = mpl.image;
+        mpl_internal_get_token(mpl /* <string literal> */);
+    }
+    /* parse optional indexing expression */
+    if (mpl.token == T_LBRACE)
+    {  par.domain = mpl_internal_indexing_expression(mpl);
+        par.dim = mpl_internal_domain_arity(mpl, par.domain);
+    }
+    /* include the parameter name in the symbolic names table */
+    {   var node = mpl.tree[par.name] = {};
+        node.type = A_PARAMETER;
+        node.link = par;
+    }
+    /* parse the list of optional attributes */
+    for (;;)
+    {  if (mpl.token == T_COMMA)
+        mpl_internal_get_token(mpl /* , */);
+    else if (mpl.token == T_SEMICOLON)
+        break;
+        if (mpl_internal_is_keyword(mpl, "integer"))
+        {  if (integer_used)
+            mpl_internal_error(mpl, "at most one integer allowed");
+            if (par.type == A_SYMBOLIC)
+                mpl_internal_error(mpl, "symbolic parameter cannot be integer");
+            if (par.type != A_BINARY) par.type = A_INTEGER;
+            integer_used = 1;
+            mpl_internal_get_token(mpl /* integer */);
+        }
+        else if (mpl_internal_is_keyword(mpl, "binary"))
+            process_binary();
+        else if (mpl_internal_is_keyword(mpl, "logical"))
+        {  if (!mpl.as_binary)
+        {   mpl_internal_warning(mpl, "keyword logical understood as binary");
+            mpl.as_binary = 1;
+        }
+            process_binary();
+        }
+        else if (mpl_internal_is_keyword(mpl, "symbolic"))
+        {  if (symbolic_used)
+            mpl_internal_error(mpl, "at most one symbolic allowed");
+            if (par.type != A_NUMERIC)
+                mpl_internal_error(mpl, "integer or binary parameter cannot be symbolic");
+            /* the parameter may be referenced from expressions given
+             in the same parameter declaration, so its type must be
+             completed before parsing that expressions */
+            if (!(par.cond == null && par.in == null &&
+                par.assign == null && par.option == null))
+                mpl_internal_error(mpl, "keyword symbolic must precede any other parameter attributes");
+            par.type = A_SYMBOLIC;
+            symbolic_used = 1;
+            mpl_internal_get_token(mpl /* symbolic */);
+        }
+        else if (mpl.token == T_LT || mpl.token == T_LE ||
+            mpl.token == T_EQ || mpl.token == T_GE ||
+            mpl.token == T_GT || mpl.token == T_NE)
+        {  /* restricting condition */
+            var opstr; // [8];
+            /* create new restricting condition list entry and append
+             it to the conditions list */
+            var cond = {};
+            switch (mpl.token)
+            {  case T_LT:
+                cond.rho = O_LT; opstr = mpl.image; break;
+                case T_LE:
+                    cond.rho = O_LE; opstr = mpl.image; break;
+                case T_EQ:
+                    cond.rho = O_EQ; opstr = mpl.image; break;
+                case T_GE:
+                    cond.rho = O_GE; opstr = mpl.image; break;
+                case T_GT:
+                    cond.rho = O_GT; opstr = mpl.image; break;
+                case T_NE:
+                    cond.rho = O_NE; opstr = mpl.image; break;
+                default:
+                    xassert(mpl.token != mpl.token);
+            }
+            xassert(opstr.length < 8);
+            cond.code = null;
+            cond.next = null;
+            if (par.cond == null)
+                par.cond = cond;
+            else
+            {  for (temp = par.cond; temp.next != null; temp = temp.next){}
+                temp.next = cond;
+            }
+            mpl_internal_get_token(mpl /* rho */);
+            /* parse an expression that follows relational operator */
+            cond.code = mpl_internal_expression_5(mpl);
+            if (!(cond.code.type == A_NUMERIC ||
+                cond.code.type == A_SYMBOLIC))
+                mpl_internal_error(mpl, "expression following " + opstr + " has invalid type");
+            xassert(cond.code.dim == 0);
+            /* convert to the parameter type, if necessary */
+            if (par.type != A_SYMBOLIC && cond.code.type ==
+                A_SYMBOLIC)
+                cond.code = mpl_internal_make_unary(mpl, O_CVTNUM, cond.code,
+                    A_NUMERIC, 0);
+            if (par.type == A_SYMBOLIC && cond.code.type !=
+                A_SYMBOLIC)
+                cond.code = mpl_internal_make_unary(mpl, O_CVTSYM, cond.code,
+                    A_SYMBOLIC, 0);
+        }
+        else if (mpl.token == T_IN || mpl.token == T_WITHIN)
+        {  /* restricting superset */
+            var in_;
+            if (mpl.token == T_WITHIN && !mpl.as_in)
+            {   mpl_internal_warning(mpl, "keyword within understood as in");
+                mpl.as_in = 1;
+            }
+            mpl_internal_get_token(mpl /* in */);
+            /* create new restricting superset list entry and append it
+             to the in-list */
+            in_ = {};
+            in_.code = null;
+            in_.next = null;
+            if (par.in == null)
+                par.in = in_;
+            else
+            {  for (temp = par.in; temp.next != null; temp = temp.next){}
+                temp.next = in_;
+            }
+            /* parse an expression that follows 'in' */
+            in_.code = mpl_internal_expression_9(mpl);
+            if (in_.code.type != A_ELEMSET)
+                mpl_internal_error(mpl, "expression following in has invalid type");
+            xassert(in_.code.dim > 0);
+            if (in_.code.dim != 1)
+                mpl_internal_error(mpl, "set expression following in must have dimens"+
+                    "ion 1 rather than " + in_.code.dim);
+        }
+        else if (mpl.token == T_ASSIGN)
+        {   /* assignment expression */
+            if (!(par.assign == null && par.option == null))
+                err();
+            mpl_internal_get_token(mpl /* := */);
+            /* parse an expression that follows ':=' */
+            par.assign = mpl_internal_expression_5(mpl);
+            /* the expression must be of numeric/symbolic type */
+            if (!(par.assign.type == A_NUMERIC ||
+                par.assign.type == A_SYMBOLIC))
+                mpl_internal_error(mpl, "expression following := has invalid type");
+            xassert(par.assign.dim == 0);
+            /* convert to the parameter type, if necessary */
+            if (par.type != A_SYMBOLIC && par.assign.type ==
+                A_SYMBOLIC)
+                par.assign = mpl_internal_make_unary(mpl, O_CVTNUM, par.assign,
+                    A_NUMERIC, 0);
+            if (par.type == A_SYMBOLIC && par.assign.type !=
+                A_SYMBOLIC)
+                par.assign = mpl_internal_make_unary(mpl, O_CVTSYM, par.assign,
+                    A_SYMBOLIC, 0);
+        }
+        else if (mpl_internal_is_keyword(mpl, "default"))
+        {  /* expression for default value */
+            if (!(par.assign == null && par.option == null)) err();
+            mpl_internal_get_token(mpl /* default */);
+            /* parse an expression that follows 'default' */
+            par.option = mpl_internal_expression_5(mpl);
+            if (!(par.option.type == A_NUMERIC ||
+                par.option.type == A_SYMBOLIC))
+                mpl_internal_error(mpl, "expression following default has invalid type");
+            xassert(par.option.dim == 0);
+            /* convert to the parameter type, if necessary */
+            if (par.type != A_SYMBOLIC && par.option.type ==
+                A_SYMBOLIC)
+                par.option = mpl_internal_make_unary(mpl, O_CVTNUM, par.option,
+                    A_NUMERIC, 0);
+            if (par.type == A_SYMBOLIC && par.option.type !=
+                A_SYMBOLIC)
+                par.option = mpl_internal_make_unary(mpl, O_CVTSYM, par.option,
+                    A_SYMBOLIC, 0);
+        }
+        else
+            mpl_internal_error(mpl, "syntax error in parameter statement");
+    }
+    /* close the domain scope */
+    if (par.domain != null) mpl_internal_close_scope(mpl, par.domain);
+    /* the parameter statement has been completely parsed */
+    xassert(mpl.token == T_SEMICOLON);
+    mpl_internal_get_token(mpl /* ; */);
+    return par;
+}
+
+function mpl_internal_variable_statement(mpl){
+    var integer_used = 0, binary_used = 0;
+
+    function process_binary(){
+        if (binary_used)
+            mpl_internal_error(mpl, "at most one binary allowed");
+        var_.type = A_BINARY;
+        binary_used = 1;
+        mpl_internal_get_token(mpl /* binary */);
+    }
+
+    xassert(mpl_internal_is_keyword(mpl, "var"));
+    if (mpl.flag_s)
+        mpl_internal_error(mpl, "variable statement must precede solve statement");
+    mpl_internal_get_token(mpl /* var */);
+    /* symbolic name must follow the keyword 'var' */
+    if (mpl.token == T_NAME){
+
+    }
+    else if (mpl_internal_is_reserved(mpl))
+        mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+    else
+        mpl_internal_error(mpl, "symbolic name missing where expected");
+    /* there must be no other object with the same name */
+    if (mpl.tree[mpl.image] != null)
+        mpl_internal_error(mpl, mpl.image + " multiply declared");
+    /* create model variable */
+    var var_ = {};
+    var_.name = mpl.image;
+    var_.alias = null;
+    var_.dim = 0;
+    var_.domain = null;
+    var_.type = A_NUMERIC;
+    var_.lbnd = null;
+    var_.ubnd = null;
+    var_.array = null;
+    mpl_internal_get_token(mpl /* <symbolic name> */);
+    /* parse optional alias */
+    if (mpl.token == T_STRING)
+    {
+        var_.alias = mpl.image;
+        mpl_internal_get_token(mpl /* <string literal> */);
+    }
+    /* parse optional indexing expression */
+    if (mpl.token == T_LBRACE)
+    {  var_.domain = mpl_internal_indexing_expression(mpl);
+        var_.dim = mpl_internal_domain_arity(mpl, var_.domain);
+    }
+    /* include the variable name in the symbolic names table */
+    {
+        var node = mpl.tree[var_.name] = {};
+        node.type = A_VARIABLE;
+        node.link = var_;
+    }
+    /* parse the list of optional attributes */
+    for (;;)
+    {  if (mpl.token == T_COMMA)
+        mpl_internal_get_token(mpl /* , */);
+    else if (mpl.token == T_SEMICOLON)
+        break;
+        if (mpl_internal_is_keyword(mpl, "integer"))
+        {  if (integer_used)
+            mpl_internal_error(mpl, "at most one integer allowed");
+            if (var_.type != A_BINARY) var_.type = A_INTEGER;
+            integer_used = 1;
+            mpl_internal_get_token(mpl /* integer */);
+        }
+        else if (mpl_internal_is_keyword(mpl, "binary"))
+            process_binary();
+        else if (mpl_internal_is_keyword(mpl, "logical"))
+        {  if (!mpl.as_binary)
+        {  mpl_internal_warning(mpl, "keyword logical understood as binary");
+            mpl.as_binary = 1;
+        }
+            process_binary();
+        }
+        else if (mpl_internal_is_keyword(mpl, "symbolic"))
+            mpl_internal_error(mpl, "variable cannot be symbolic");
+        else if (mpl.token == T_GE)
+        {  /* lower bound */
+            if (var_.lbnd != null)
+            {  if (var_.lbnd == var_.ubnd)
+                mpl_internal_error(mpl, "both fixed value and lower bound not allowed");
+            else
+                mpl_internal_error(mpl, "at most one lower bound allowed");
+            }
+            mpl_internal_get_token(mpl /* >= */);
+            /* parse an expression that specifies the lower bound */
+            var_.lbnd = mpl_internal_expression_5(mpl);
+            if (var_.lbnd.type == A_SYMBOLIC)
+                var_.lbnd = mpl_internal_make_unary(mpl, O_CVTNUM, var_.lbnd,
+                    A_NUMERIC, 0);
+            if (var_.lbnd.type != A_NUMERIC)
+                mpl_internal_error(mpl, "expression following >= has invalid type");
+            xassert(var_.lbnd.dim == 0);
+        }
+        else if (mpl.token == T_LE)
+        {  /* upper bound */
+            if (var_.ubnd != null)
+            {  if (var_.ubnd == var_.lbnd)
+                mpl_internal_error(mpl, "both fixed value and upper bound not allowed");
+            else
+                mpl_internal_error(mpl, "at most one upper bound allowed");
+            }
+            mpl_internal_get_token(mpl /* <= */);
+            /* parse an expression that specifies the upper bound */
+            var_.ubnd = mpl_internal_expression_5(mpl);
+            if (var_.ubnd.type == A_SYMBOLIC)
+                var_.ubnd = mpl_internal_make_unary(mpl, O_CVTNUM, var_.ubnd,
+                    A_NUMERIC, 0);
+            if (var_.ubnd.type != A_NUMERIC)
+                mpl_internal_error(mpl, "expression following <= has invalid type");
+            xassert(var_.ubnd.dim == 0);
+        }
+        else if (mpl.token == T_EQ)
+        {  /* fixed value */
+            var opstr; //[8]
+            if (!(var_.lbnd == null && var_.ubnd == null))
+            {  if (var_.lbnd == var_.ubnd)
+                mpl_internal_error(mpl, "at most one fixed value allowed");
+            else if (var_.lbnd != null)
+                mpl_internal_error(mpl, "both lower bound and fixed value not allowed");
+            else
+                mpl_internal_error(mpl, "both upper bound and fixed value not allowed");
+            }
+            opstr = mpl.image;
+            xassert(opstr.length < 8);
+            mpl_internal_get_token(mpl /* = | == */);
+            /* parse an expression that specifies the fixed value */
+            var_.lbnd = mpl_internal_expression_5(mpl);
+            if (var_.lbnd.type == A_SYMBOLIC)
+                var_.lbnd = mpl_internal_make_unary(mpl, O_CVTNUM, var_.lbnd,
+                    A_NUMERIC, 0);
+            if (var_.lbnd.type != A_NUMERIC)
+                mpl_internal_error(mpl, "expression following " + opstr + " has invalid type");
+            xassert(var_.lbnd.dim == 0);
+            /* indicate that the variable is fixed, not bounded */
+            var_.ubnd = var_.lbnd;
+        }
+        else if (mpl.token == T_LT || mpl.token == T_GT ||
+            mpl.token == T_NE)
+            mpl_internal_error(mpl, "strict bound not allowed");
+        else
+            mpl_internal_error(mpl, "syntax error in variable statement");
+    }
+    /* close the domain scope */
+    if (var_.domain != null) mpl_internal_close_scope(mpl, var_.domain);
+    /* the variable statement has been completely parsed */
+    xassert(mpl.token == T_SEMICOLON);
+    mpl_internal_get_token(mpl /* ; */);
+    return var_;
+}
+
+function mpl_internal_constraint_statement(mpl){
+    var first, second, third;
+    var rho;
+    var opstr; //[8];
+
+    function err(){mpl_internal_error(mpl, "syntax error in constraint statement")}
+
+    if (mpl.flag_s)
+        mpl_internal_error(mpl, "constraint statement must precede solve statement");
+    if (mpl_internal_is_keyword(mpl, "subject"))
+    {  mpl_internal_get_token(mpl /* subject */);
+        if (!mpl_internal_is_keyword(mpl, "to"))
+            mpl_internal_error(mpl, "keyword subject to incomplete");
+        mpl_internal_get_token(mpl /* to */);
+    }
+    else if (mpl_internal_is_keyword(mpl, "subj"))
+    {  mpl_internal_get_token(mpl /* subj */);
+        if (!mpl_internal_is_keyword(mpl, "to"))
+            mpl_internal_error(mpl, "keyword subj to incomplete");
+        mpl_internal_get_token(mpl /* to */);
+    }
+    else if (mpl.token == T_SPTP)
+        mpl_internal_get_token(mpl /* s.t. */);
+    /* the current token must be symbolic name of constraint */
+    if (mpl.token == T_NAME){
+
+    }
+    else if (mpl_internal_is_reserved(mpl))
+        mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+    else
+        mpl_internal_error(mpl, "symbolic name missing where expected");
+    /* there must be no other object with the same name */
+    if (mpl.tree[mpl.image] != null)
+        mpl_internal_error(mpl, mpl.image + " multiply declared");
+    /* create model constraint */
+    var con = {};
+    con.name = mpl.image;
+    con.alias = null;
+    con.dim = 0;
+    con.domain = null;
+    con.type = A_CONSTRAINT;
+    con.code = null;
+    con.lbnd = null;
+    con.ubnd = null;
+    con.array = null;
+    mpl_internal_get_token(mpl /* <symbolic name> */);
+    /* parse optional alias */
+    if (mpl.token == T_STRING)
+    {
+        con.alias = mpl.image;
+        mpl_internal_get_token(mpl /* <string literal> */);
+    }
+    /* parse optional indexing expression */
+    if (mpl.token == T_LBRACE)
+    {  con.domain = mpl_internal_indexing_expression(mpl);
+        con.dim = mpl_internal_domain_arity(mpl, con.domain);
+    }
+    /* include the constraint name in the symbolic names table */
+    {
+        var node = mpl.tree[con.name] = {};
+        node.type = A_CONSTRAINT;
+        node.link = con;
+    }
+    /* the colon must precede the first expression */
+    if (mpl.token != T_COLON)
+        mpl_internal_error(mpl, "colon missing where expected");
+    mpl_internal_get_token(mpl /* : */);
+    /* parse the first expression */
+    first = mpl_internal_expression_5(mpl);
+    if (first.type == A_SYMBOLIC)
+        first = mpl_internal_make_unary(mpl, O_CVTNUM, first, A_NUMERIC, 0);
+    if (!(first.type == A_NUMERIC || first.type == A_FORMULA))
+        mpl_internal_error(mpl, "expression following colon has invalid type");
+    xassert(first.dim == 0);
+    /* relational operator must follow the first expression */
+    if (mpl.token == T_COMMA) mpl_internal_get_token(mpl /* , */);
+    switch (mpl.token)
+    {  case T_LE:
+        case T_GE:
+        case T_EQ:
+            break;
+        case T_LT:
+        case T_GT:
+        case T_NE:
+            mpl_internal_error(mpl, "strict inequality not allowed");
+            break;
+        case T_SEMICOLON:
+            mpl_internal_error(mpl, "constraint must be equality or inequality");
+            break;
+        default:
+            err();
+    }
+    rho = mpl.token;
+    opstr = mpl.image;
+    xassert(opstr.length < 8);
+    mpl_internal_get_token(mpl /* rho */);
+    /* parse the second expression */
+    second = mpl_internal_expression_5(mpl);
+    if (second.type == A_SYMBOLIC)
+        second = mpl_internal_make_unary(mpl, O_CVTNUM, second, A_NUMERIC, 0);
+    if (!(second.type == A_NUMERIC || second.type == A_FORMULA))
+        mpl_internal_error(mpl, "expression following " + opstr + " has invalid type");
+    xassert(second.dim == 0);
+    /* check a token that follow the second expression */
+    if (mpl.token == T_COMMA)
+    {  mpl_internal_get_token(mpl /* , */);
+        if (mpl.token == T_SEMICOLON) err();
+    }
+    if (mpl.token == T_LT || mpl.token == T_LE ||
+        mpl.token == T_EQ || mpl.token == T_GE ||
+        mpl.token == T_GT || mpl.token == T_NE)
+    {  /* it is another relational operator, therefore the constraint
+     is double inequality */
+        if (rho == T_EQ || mpl.token != rho)
+            mpl_internal_error(mpl, "double inequality must be ... <= ... <= ... or " +
+                "... >= ... >= ...");
+        /* the first expression cannot be linear form */
+        if (first.type == A_FORMULA)
+            mpl_internal_error(mpl, "leftmost expression in double inequality cannot" +
+                " be linear form");
+        mpl_internal_get_token(mpl /* rho */);
+        /* parse the third expression */
+        third = mpl_internal_expression_5(mpl);
+        if (third.type == A_SYMBOLIC)
+            third = mpl_internal_make_unary(mpl, O_CVTNUM, second, A_NUMERIC, 0);
+        if (!(third.type == A_NUMERIC || third.type == A_FORMULA))
+            mpl_internal_error(mpl, "rightmost expression in double inequality const" +
+                "raint has invalid type");
+        xassert(third.dim == 0);
+        /* the third expression also cannot be linear form */
+        if (third.type == A_FORMULA)
+            mpl_internal_error(mpl, "rightmost expression in double inequality canno" +
+                "t be linear form");
+    }
+    else
+    {  /* the constraint is equality or single inequality */
+        third = null;
+    }
+    /* close the domain scope */
+    if (con.domain != null) mpl_internal_close_scope(mpl, con.domain);
+    /* convert all expressions to linear form, if necessary */
+    if (first.type != A_FORMULA)
+        first = mpl_internal_make_unary(mpl, O_CVTLFM, first, A_FORMULA, 0);
+    if (second.type != A_FORMULA)
+        second = mpl_internal_make_unary(mpl, O_CVTLFM, second, A_FORMULA, 0);
+    if (third != null)
+        third = mpl_internal_make_unary(mpl, O_CVTLFM, third, A_FORMULA, 0);
+    /* arrange expressions in the constraint */
+    if (third == null)
+    {  /* the constraint is equality or single inequality */
+        switch (rho)
+        {  case T_LE:
+            /* first <= second */
+            con.code = first;
+            con.lbnd = null;
+            con.ubnd = second;
+            break;
+            case T_GE:
+                /* first >= second */
+                con.code = first;
+                con.lbnd = second;
+                con.ubnd = null;
+                break;
+            case T_EQ:
+                /* first = second */
+                con.code = first;
+                con.lbnd = second;
+                con.ubnd = second;
+                break;
+            default:
+                xassert(rho != rho);
+        }
+    }
+    else
+    {  /* the constraint is double inequality */
+        switch (rho)
+        {  case T_LE:
+            /* first <= second <= third */
+            con.code = second;
+            con.lbnd = first;
+            con.ubnd = third;
+            break;
+            case T_GE:
+                /* first >= second >= third */
+                con.code = second;
+                con.lbnd = third;
+                con.ubnd = first;
+                break;
+            default:
+                xassert(rho != rho);
+        }
+    }
+    /* the constraint statement has been completely parsed */
+    if (mpl.token != T_SEMICOLON)
+        err();
+    mpl_internal_get_token(mpl /* ; */);
+    return con;
+}
+
+function mpl_internal_objective_statement(mpl){
+    var obj;
+    var type;
+    if (mpl_internal_is_keyword(mpl, "minimize"))
+        type = A_MINIMIZE;
+    else if (mpl_internal_is_keyword(mpl, "maximize"))
+        type = A_MAXIMIZE;
+    else
+        xassert(mpl != mpl);
+    if (mpl.flag_s)
+        mpl_internal_error(mpl, "objective statement must precede solve statement");
+    mpl_internal_get_token(mpl /* minimize | maximize */);
+    /* symbolic name must follow the verb 'minimize' or 'maximize' */
+    if (mpl.token == T_NAME){
+
+    }
+    else if (mpl_internal_is_reserved(mpl))
+        mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+    else
+        mpl_internal_error(mpl, "symbolic name missing where expected");
+    /* there must be no other object with the same name */
+    if (mpl.tree[mpl.image] != null)
+        mpl_internal_error(mpl, mpl.image + " multiply declared");
+    /* create model objective */
+    obj = {};
+    obj.name = mpl.image;
+    obj.alias = null;
+    obj.dim = 0;
+    obj.domain = null;
+    obj.type = type;
+    obj.code = null;
+    obj.lbnd = null;
+    obj.ubnd = null;
+    obj.array = null;
+    mpl_internal_get_token(mpl /* <symbolic name> */);
+    /* parse optional alias */
+    if (mpl.token == T_STRING)
+    {
+        obj.alias = mpl.image;
+        mpl_internal_get_token(mpl /* <string literal> */);
+    }
+    /* parse optional indexing expression */
+    if (mpl.token == T_LBRACE)
+    {   obj.domain = mpl_internal_indexing_expression(mpl);
+        obj.dim = mpl_internal_domain_arity(mpl, obj.domain);
+    }
+    /* include the constraint name in the symbolic names table */
+    {
+        var node = mpl.tree[obj.name] = {};
+        node.type = A_CONSTRAINT;
+        node.link = obj;
+    }
+    /* the colon must precede the objective expression */
+    if (mpl.token != T_COLON)
+        mpl_internal_error(mpl, "colon missing where expected");
+    mpl_internal_get_token(mpl /* : */);
+    /* parse the objective expression */
+    obj.code = mpl_internal_expression_5(mpl);
+    if (obj.code.type == A_SYMBOLIC)
+        obj.code = mpl_internal_make_unary(mpl, O_CVTNUM, obj.code, A_NUMERIC, 0);
+    if (obj.code.type == A_NUMERIC)
+        obj.code = mpl_internal_make_unary(mpl, O_CVTLFM, obj.code, A_FORMULA, 0);
+    if (obj.code.type != A_FORMULA)
+        mpl_internal_error(mpl, "expression following colon has invalid type");
+    xassert(obj.code.dim == 0);
+    /* close the domain scope */
+    if (obj.domain != null) mpl_internal_close_scope(mpl, obj.domain);
+    /* the objective statement has been completely parsed */
+    if (mpl.token != T_SEMICOLON)
+        mpl_internal_error(mpl, "syntax error in objective statement");
+    mpl_internal_get_token(mpl /* ; */);
+    return obj;
+}
+
+function mpl_internal_table_statement(mpl){
+    var last_arg, arg;
+    var last_fld, fld;
+    var last_in, in_;
+    var last_out, out;
+    var node;
+    var nflds;
+    var name; // [MAX_LENGTH+1];
+    xassert(mpl_internal_is_keyword(mpl, "table"));
+    mpl_internal_get_token(mpl /* solve */);
+    /* symbolic name must follow the keyword table */
+    if (mpl.token == T_NAME){
+
+    }
+    else if (mpl_internal_is_reserved(mpl))
+        mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+    else
+        mpl_internal_error(mpl, "symbolic name missing where expected");
+    /* there must be no other object with the same name */
+    if (mpl.tree[mpl.image] != null)
+        mpl_internal_error(mpl, mpl.image + " multiply declared");
+    /* create data table */
+    var tab = {u: {in: {}, out: {}}};
+    tab.name = mpl.image;
+    mpl_internal_get_token(mpl /* <symbolic name> */);
+    /* parse optional alias */
+    if (mpl.token == T_STRING)
+    {
+        tab.alias = mpl.image;
+        mpl_internal_get_token(mpl /* <string literal> */);
+    }
+    else
+        tab.alias = null;
+    /* parse optional indexing expression */
+    if (mpl.token == T_LBRACE)
+    {  /* this is output table */
+        tab.type = A_OUTPUT;
+        tab.u.out.domain = mpl_internal_indexing_expression(mpl);
+        if (!mpl_internal_is_keyword(mpl, "OUT"))
+            mpl_internal_error(mpl, "keyword OUT missing where expected");
+        mpl_internal_get_token(mpl /* OUT */);
+    }
+    else
+    {  /* this is input table */
+        tab.type = A_INPUT;
+        if (!mpl_internal_is_keyword(mpl, "IN"))
+            mpl_internal_error(mpl, "keyword IN missing where expected");
+        mpl_internal_get_token(mpl /* IN */);
+    }
+    /* parse argument list */
+    tab.arg = last_arg = null;
+    for (;;)
+    {  /* create argument list entry */
+        arg = {};
+        /* parse argument expression */
+        if (mpl.token == T_COMMA || mpl.token == T_COLON ||
+            mpl.token == T_SEMICOLON)
+            mpl_internal_error(mpl, "argument expression missing where expected");
+        arg.code = mpl_internal_expression_5(mpl);
+        /* convert the result to symbolic type, if necessary */
+        if (arg.code.type == A_NUMERIC)
+            arg.code =
+                mpl_internal_make_unary(mpl, O_CVTSYM, arg.code, A_SYMBOLIC, 0);
+        /* check that now the result is of symbolic type */
+        if (arg.code.type != A_SYMBOLIC)
+            mpl_internal_error(mpl, "argument expression has invalid type");
+        /* add the entry to the end of the list */
+        arg.next = null;
+        if (last_arg == null)
+            tab.arg = arg;
+        else
+            last_arg.next = arg;
+        last_arg = arg;
+        /* argument expression has been parsed */
+        if (mpl.token == T_COMMA)
+            mpl_internal_get_token(mpl /* , */);
+        else if (mpl.token == T_COLON || mpl.token == T_SEMICOLON)
+            break;
+    }
+    xassert(tab.arg != null);
+    /* argument list must end with colon */
+    if (mpl.token == T_COLON)
+        mpl_internal_get_token(mpl /* : */);
+    else
+        mpl_internal_error(mpl, "colon missing where expected");
+    /* parse specific part of the table statement */
+    switch (tab.type)
+    {   case A_INPUT:
+        /* parse optional set name */
+        if (mpl.token == T_NAME)
+        {   node = mpl.tree[mpl.image];
+            if (node == null)
+                mpl_internal_error(mpl, mpl.image + " not defined");
+            if (node.type != A_SET)
+                mpl_internal_error(mpl, mpl.image + " not a set");
+            tab.u.in.set = node.link;
+            if (tab.u.in.set.assign != null)
+                mpl_internal_error(mpl, mpl.image + " needs no data");
+            if (tab.u.in.set.dim != 0)
+                mpl_internal_error(mpl, mpl.image + " must be a simple set");
+            mpl_internal_get_token(mpl /* <symbolic name> */);
+            if (mpl.token == T_INPUT)
+                mpl_internal_get_token(mpl /* <- */);
+            else
+                mpl_internal_error(mpl, "delimiter <- missing where expected");
+        }
+        else if (mpl_internal_is_reserved(mpl))
+            mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+        else
+            tab.u.in.set = null;
+        /* parse field list */
+        tab.u.in.fld = last_fld = null;
+        nflds = 0;
+        if (mpl.token == T_LBRACKET)
+            mpl_internal_get_token(mpl /* [ */);
+        else
+            mpl_internal_error(mpl, "field list missing where expected");
+        for (;;)
+        {  /* create field list entry */
+            fld = {};
+            /* parse field name */
+            if (mpl.token == T_NAME){
+
+            }
+            else if (mpl_internal_is_reserved(mpl))
+                mpl_internal_error(mpl,
+                    "invalid use of reserved keyword " + mpl.image);
+            else
+                mpl_internal_error(mpl, "field name missing where expected");
+            fld.name = mpl.image;
+            mpl_internal_get_token(mpl /* <symbolic name> */);
+            /* add the entry to the end of the list */
+            fld.next = null;
+            if (last_fld == null)
+                tab.u.in.fld = fld;
+            else
+                last_fld.next = fld;
+            last_fld = fld;
+            nflds++;
+            /* field name has been parsed */
+            if (mpl.token == T_COMMA)
+                mpl_internal_get_token(mpl /* , */);
+            else if (mpl.token == T_RBRACKET)
+                break;
+            else
+                mpl_internal_error(mpl, "syntax error in field list");
+        }
+        /* check that the set dimen is equal to the number of fields */
+        if (tab.u.in.set != null && tab.u.in.set.dimen != nflds)
+            mpl_internal_error(mpl, "there must be " + tab.u.in.set.dimen + " field" +
+                (tab.u.in.set.dimen == 1 ? "" : "s") + " rather than " + nflds);
+        mpl_internal_get_token(mpl /* ] */);
+        /* parse optional input list */
+        tab.u.in.list = last_in = null;
+        while (mpl.token == T_COMMA)
+        {  mpl_internal_get_token(mpl /* , */);
+            /* create input list entry */
+            in_ = {};
+            /* parse parameter name */
+            if (mpl.token == T_NAME){
+
+            }
+            else if (mpl_internal_is_reserved(mpl))
+                mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+            else
+                mpl_internal_error(mpl, "parameter name missing where expected");
+            node = mpl.tree[mpl.image];
+            if (node == null)
+                mpl_internal_error(mpl, mpl.image + " not defined");
+            if (node.type != A_PARAMETER)
+                mpl_internal_error(mpl, mpl.image + " not a parameter");
+            in_.par = node.link;
+            if (in_.par.dim != nflds)
+                mpl_internal_error(mpl, mpl.image + " must have " + nflds + " subscript" + (nflds == 1 ? "" : "s") + " rather than " + in_.par.dim);
+            if (in_.par.assign != null)
+                mpl_internal_error(mpl, mpl.image + " needs no data");
+            mpl_internal_get_token(mpl /* <symbolic name> */);
+            /* parse optional field name */
+            if (mpl.token == T_TILDE)
+            {  mpl_internal_get_token(mpl /* ~ */);
+                /* parse field name */
+                if (mpl.token == T_NAME){
+
+                }
+                else if (mpl_internal_is_reserved(mpl))
+                    mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+                else
+                    mpl_internal_error(mpl, "field name missing where expected");
+                xassert(mpl.image.length < MAX_LENGTH+1);
+                name = mpl.image;
+                mpl_internal_get_token(mpl /* <symbolic name> */);
+            }
+            else
+            {  /* field name is the same as the parameter name */
+                xassert(in_.par.name.length < MAX_LENGTH+1);
+                name = in_.par.name;
+            }
+            /* assign field name */
+            in_.name = name;
+            /* add the entry to the end of the list */
+            in_.next = null;
+            if (last_in == null)
+                tab.u.in.list = in_;
+            else
+                last_in.next = in_;
+            last_in = in_;
+        }
+        break;
+        case A_OUTPUT:
+            /* parse output list */
+            tab.u.out.list = last_out = null;
+            for (;;)
+            {  /* create output list entry */
+                out = {};
+                /* parse expression */
+                if (mpl.token == T_COMMA || mpl.token == T_SEMICOLON)
+                    mpl_internal_error(mpl, "expression missing where expected");
+                if (mpl.token == T_NAME)
+                {  xassert(mpl.image.length < MAX_LENGTH+1);
+                    name = mpl.image;
+                }
+                else
+                    name = '';
+                out.code = mpl_internal_expression_5(mpl);
+                /* parse optional field name */
+                if (mpl.token == T_TILDE)
+                {  mpl_internal_get_token(mpl /* ~ */);
+                    /* parse field name */
+                    if (mpl.token == T_NAME){
+
+                    }
+                    else if (mpl_internal_is_reserved(mpl))
+                        mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+                    else
+                        mpl_internal_error(mpl, "field name missing where expected");
+                    xassert(mpl.image.length < MAX_LENGTH+1);
+                    name = mpl.image;
+                    mpl_internal_get_token(mpl /* <symbolic name> */);
+                }
+                /* assign field name */
+                if (name == '')
+                    mpl_internal_error(mpl, "field name required");
+                out.name = name;
+                /* add the entry to the end of the list */
+                out.next = null;
+                if (last_out == null)
+                    tab.u.out.list = out;
+                else
+                    last_out.next = out;
+                last_out = out;
+                /* output item has been parsed */
+                if (mpl.token == T_COMMA)
+                    mpl_internal_get_token(mpl /* , */);
+                else if (mpl.token == T_SEMICOLON)
+                    break;
+                else
+                    mpl_internal_error(mpl, "syntax error in output list");
+            }
+            /* close the domain scope */
+            mpl_internal_close_scope(mpl,tab.u.out.domain);
+            break;
+        default:
+            xassert(tab != tab);
+    }
+
+    /* the table statement must end with semicolon */
+    if (mpl.token != T_SEMICOLON)
+        mpl_internal_error(mpl, "syntax error in table statement");
+    mpl_internal_get_token(mpl /* ; */);
+    return tab;
+}
+
+function mpl_internal_solve_statement(mpl){
+    xassert(mpl_internal_is_keyword(mpl, "solve"));
+    if (mpl.flag_s)
+        mpl_internal_error(mpl, "at most one solve statement allowed");
+    mpl.flag_s = 1;
+    mpl_internal_get_token(mpl /* solve */);
+    /* semicolon must follow solve statement */
+    if (mpl.token != T_SEMICOLON)
+        mpl_internal_error(mpl, "syntax error in solve statement");
+    mpl_internal_get_token(mpl /* ; */);
+    return null;
+}
+
+function mpl_internal_check_statement(mpl){
+    xassert(mpl_internal_is_keyword(mpl, "check"));
+    /* create check descriptor */
+    var chk = {};
+    chk.domain = null;
+    chk.code = null;
+    mpl_internal_get_token(mpl /* check */);
+    /* parse optional indexing expression */
+    if (mpl.token == T_LBRACE)
+    {  chk.domain = mpl_internal_indexing_expression(mpl);
+    }
+    /* skip optional colon */
+    if (mpl.token == T_COLON) mpl_internal_get_token(mpl /* : */);
+    /* parse logical expression */
+    chk.code = mpl_internal_expression_13(mpl);
+    if (chk.code.type != A_LOGICAL)
+        mpl_internal_error(mpl, "expression has invalid type");
+    xassert(chk.code.dim == 0);
+    /* close the domain scope */
+    if (chk.domain != null) mpl_internal_close_scope(mpl, chk.domain);
+    /* the check statement has been completely parsed */
+    if (mpl.token != T_SEMICOLON)
+        mpl_internal_error(mpl, "syntax error in check statement");
+    mpl_internal_get_token(mpl /* ; */);
+    return chk;
+}
+
+function mpl_internal_display_statement(mpl){
+    var last_entry;
+
+    xassert(mpl_internal_is_keyword(mpl, "display"));
+    /* create display descriptor */
+    var dpy = {};
+    dpy.domain = null;
+    dpy.list = last_entry = null;
+    mpl_internal_get_token(mpl /* display */);
+    /* parse optional indexing expression */
+    if (mpl.token == T_LBRACE)
+        dpy.domain = mpl_internal_indexing_expression(mpl);
+    /* skip optional colon */
+    if (mpl.token == T_COLON) mpl_internal_get_token(mpl /* : */);
+    /* parse display list */
+    for (;;)
+    {  /* create new display entry */
+        var entry = {u: {}};
+
+        function expr(){
+            /* display entry is expression */
+            entry.type = A_EXPRESSION;
+            entry.u.code = mpl_internal_expression_13(mpl);
+        }
+
+        entry.type = 0;
+        entry.next = null;
+        /* and append it to the display list */
+        if (dpy.list == null)
+            dpy.list = entry;
+        else
+            last_entry.next = entry;
+        last_entry = entry;
+        /* parse display entry */
+        if (mpl.token == T_NAME)
+        {   var node;
+            var next_token;
+            mpl_internal_get_token(mpl /* <symbolic name> */);
+            next_token = mpl.token;
+            mpl_internal_unget_token(mpl);
+            if (!(next_token == T_COMMA || next_token == T_SEMICOLON))
+            {  /* symbolic name begins expression */
+                expr();
+            } else {
+                /* display entry is dummy index or model object */
+                node = mpl.tree[mpl.image];
+                if (node == null)
+                    mpl_internal_error(mpl, mpl.image + " not defined");
+                entry.type = node.type;
+                switch (node.type)
+                {  case A_INDEX:
+                    entry.u.slot = node.link;
+                    break;
+                    case A_SET:
+                        entry.u.set = node.link;
+                        break;
+                    case A_PARAMETER:
+                        entry.u.par = node.link;
+                        break;
+                    case A_VARIABLE:
+                        entry.u.var = node.link;
+                        if (!mpl.flag_s)
+                            mpl_internal_error(mpl, "invalid reference to variable " + entry.u.var.name +  " above solve statement");
+                        break;
+                    case A_CONSTRAINT:
+                        entry.u.con = node.link;
+                        if (!mpl.flag_s)
+                            mpl_internal_error(mpl, "invalid reference to " + (entry.u.con.type == A_CONSTRAINT ?"constraint" : "objective") +
+                                " " + entry.u.con.name + " above solve statement");
+                        break;
+                    default:
+                        xassert(node != node);
+                }
+                mpl_internal_get_token(mpl /* <symbolic name> */);
+            }
+        }
+        else
+            expr();
+        /* check a token that follows the entry parsed */
+        if (mpl.token == T_COMMA)
+            mpl_internal_get_token(mpl /* , */);
+        else
+            break;
+    }
+    /* close the domain scope */
+    if (dpy.domain != null) mpl_internal_close_scope(mpl, dpy.domain);
+    /* the display statement has been completely parsed */
+    if (mpl.token != T_SEMICOLON)
+        mpl_internal_error(mpl, "syntax error in display statement");
+    mpl_internal_get_token(mpl /* ; */);
+    return dpy;
+}
+
+function mpl_internal_printf_statement(mpl){
+    var entry, last_entry;
+    xassert(mpl_internal_is_keyword(mpl, "printf"));
+    /* create printf descriptor */
+    var prt = {};
+    prt.domain = null;
+    prt.fmt = null;
+    prt.list = last_entry = null;
+    mpl_internal_get_token(mpl /* printf */);
+    /* parse optional indexing expression */
+    if (mpl.token == T_LBRACE)
+    {  prt.domain = mpl_internal_indexing_expression(mpl);
+    }
+    /* skip optional colon */
+    if (mpl.token == T_COLON) mpl_internal_get_token(mpl /* : */);
+    /* parse expression for format string */
+    prt.fmt = mpl_internal_expression_5(mpl);
+    /* convert it to symbolic type, if necessary */
+    if (prt.fmt.type == A_NUMERIC)
+        prt.fmt = mpl_internal_make_unary(mpl, O_CVTSYM, prt.fmt, A_SYMBOLIC, 0);
+    /* check that now the expression is of symbolic type */
+    if (prt.fmt.type != A_SYMBOLIC)
+        mpl_internal_error(mpl, "format expression has invalid type");
+    /* parse printf list */
+    while (mpl.token == T_COMMA)
+    {  mpl_internal_get_token(mpl /* , */);
+        /* create new printf entry */
+        entry = {};
+        entry.code = null;
+        entry.next = null;
+        /* and append it to the printf list */
+        if (prt.list == null)
+            prt.list = entry;
+        else
+            last_entry.next = entry;
+        last_entry = entry;
+        /* parse printf entry */
+        entry.code = mpl_internal_expression_9(mpl);
+        if (!(entry.code.type == A_NUMERIC ||
+            entry.code.type == A_SYMBOLIC ||
+            entry.code.type == A_LOGICAL))
+            mpl_internal_error(mpl, "only numeric, symbolic, or logical expression allowed");
+    }
+    /* close the domain scope */
+    if (prt.domain != null) mpl_internal_close_scope(mpl, prt.domain);
+    /* parse optional redirection */
+    prt.fname = null; prt.app = 0;
+    if (mpl.token == T_GT || mpl.token == T_APPEND)
+    {  prt.app = (mpl.token == T_APPEND);
+        mpl_internal_get_token(mpl /* > or >> */);
+        /* parse expression for file name string */
+        prt.fname = mpl_internal_expression_5(mpl);
+        /* convert it to symbolic type, if necessary */
+        if (prt.fname.type == A_NUMERIC)
+            prt.fname = mpl_internal_make_unary(mpl, O_CVTSYM, prt.fname,
+                A_SYMBOLIC, 0);
+        /* check that now the expression is of symbolic type */
+        if (prt.fname.type != A_SYMBOLIC)
+            mpl_internal_error(mpl, "file name expression has invalid type");
+    }
+    /* the printf statement has been completely parsed */
+    if (mpl.token != T_SEMICOLON)
+        mpl_internal_error(mpl, "syntax error in printf statement");
+    mpl_internal_get_token(mpl /* ; */);
+    return prt;
+}
+
+function mpl_internal_for_statement(mpl){
+    var stmt, last_stmt;
+    xassert(mpl_internal_is_keyword(mpl, "for"));
+    /* create for descriptor */
+    var fur = {};
+    fur.domain = null;
+    fur.list = last_stmt = null;
+    mpl_internal_get_token(mpl /* for */);
+    /* parse indexing expression */
+    if (mpl.token != T_LBRACE)
+        mpl_internal_error(mpl, "indexing expression missing where expected");
+    fur.domain = mpl_internal_indexing_expression(mpl);
+    /* skip optional colon */
+    if (mpl.token == T_COLON) mpl_internal_get_token(mpl /* : */);
+    /* parse for statement body */
+    if (mpl.token != T_LBRACE)
+    {  /* parse simple statement */
+        fur.list = mpl_internal_simple_statement(mpl, 1);
+    }
+    else
+    {  /* parse compound statement */
+        mpl_internal_get_token(mpl /* { */);
+        while (mpl.token != T_RBRACE)
+        {  /* parse statement */
+            stmt = mpl_internal_simple_statement(mpl, 1);
+            /* and append it to the end of the statement list */
+            if (last_stmt == null)
+                fur.list = stmt;
+            else
+                last_stmt.next = stmt;
+            last_stmt = stmt;
+        }
+        mpl_internal_get_token(mpl /* } */);
+    }
+    /* close the domain scope */
+    xassert(fur.domain != null);
+    mpl_internal_close_scope(mpl, fur.domain);
+    /* the for statement has been completely parsed */
+    return fur;
+}
+
+function mpl_internal_end_statement(mpl){
+    if (!mpl.flag_d && mpl_internal_is_keyword(mpl, "end") ||
+        mpl.flag_d && mpl_internal_is_literal(mpl, "end"))
+    {
+        mpl_internal_get_token(mpl /* end */);
+        if (mpl.token == T_SEMICOLON)
+            mpl_internal_get_token(mpl /* ; */);
+        else
+            mpl_internal_warning(mpl, "no semicolon following end statement; missing" +
+                " semicolon inserted");
+    }
+    else
+        mpl_internal_warning(mpl, "unexpected end of file; missing end statement inserted");
+    if (mpl.token != T_EOF)
+        mpl_internal_warning(mpl, "some text detected beyond end statement; text ignored");
+}
+
+function mpl_internal_simple_statement(mpl, spec){
+    var stmt = {u: {}};
+    stmt.line = mpl.line;
+    stmt.next = null;
+    if (mpl_internal_is_keyword(mpl, "set"))
+    {  if (spec)
+        mpl_internal_error(mpl, "set statement not allowed here");
+        stmt.type = A_SET;
+        stmt.u.set = mpl_internal_set_statement(mpl);
+    }
+    else if (mpl_internal_is_keyword(mpl, "param"))
+    {  if (spec)
+        mpl_internal_error(mpl, "parameter statement not allowed here");
+        stmt.type = A_PARAMETER;
+        stmt.u.par = mpl_internal_parameter_statement(mpl);
+    }
+    else if (mpl_internal_is_keyword(mpl, "var"))
+    {  if (spec)
+        mpl_internal_error(mpl, "variable statement not allowed here");
+        stmt.type = A_VARIABLE;
+        stmt.u.var = mpl_internal_variable_statement(mpl);
+    }
+    else if (mpl_internal_is_keyword(mpl, "subject") ||
+        mpl_internal_is_keyword(mpl, "subj") ||
+        mpl.token == T_SPTP)
+    {  if (spec)
+        mpl_internal_error(mpl, "constraint statement not allowed here");
+        stmt.type = A_CONSTRAINT;
+        stmt.u.con = mpl_internal_constraint_statement(mpl);
+    }
+    else if (mpl_internal_is_keyword(mpl, "minimize") ||
+        mpl_internal_is_keyword(mpl, "maximize"))
+    {  if (spec)
+        mpl_internal_error(mpl, "objective statement not allowed here");
+        stmt.type = A_CONSTRAINT;
+        stmt.u.con = mpl_internal_objective_statement(mpl);
+    }
+    else if (mpl_internal_is_keyword(mpl, "table"))
+    {  if (spec)
+        mpl_internal_error(mpl, "table statement not allowed here");
+        stmt.type = A_TABLE;
+        stmt.u.tab = mpl_internal_table_statement(mpl);
+    }
+    else if (mpl_internal_is_keyword(mpl, "solve"))
+    {  if (spec)
+        mpl_internal_error(mpl, "solve statement not allowed here");
+        stmt.type = A_SOLVE;
+        stmt.u.slv = mpl_internal_solve_statement(mpl);
+    }
+    else if (mpl_internal_is_keyword(mpl, "check"))
+    {  stmt.type = A_CHECK;
+        stmt.u.chk = mpl_internal_check_statement(mpl);
+    }
+    else if (mpl_internal_is_keyword(mpl, "display"))
+    {  stmt.type = A_DISPLAY;
+        stmt.u.dpy = mpl_internal_display_statement(mpl);
+    }
+    else if (mpl_internal_is_keyword(mpl, "printf"))
+    {  stmt.type = A_PRINTF;
+        stmt.u.prt = mpl_internal_printf_statement(mpl);
+    }
+    else if (mpl_internal_is_keyword(mpl, "for"))
+    {  stmt.type = A_FOR;
+        stmt.u.fur = mpl_internal_for_statement(mpl);
+    }
+    else if (mpl.token == T_NAME)
+    {  if (spec)
+        mpl_internal_error(mpl, "constraint statement not allowed here");
+        stmt.type = A_CONSTRAINT;
+        stmt.u.con = mpl_internal_constraint_statement(mpl);
+    }
+    else if (mpl_internal_is_reserved(mpl))
+        mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
+    else
+        mpl_internal_error(mpl, "syntax error in model section");
+    return stmt;
+}
+
+function mpl_internal_model_section(mpl){
+    var stmt, last_stmt;
+    xassert(mpl.model == null);
+    last_stmt = null;
+    while (!(mpl.token == T_EOF || mpl_internal_is_keyword(mpl, "data") ||
+        mpl_internal_is_keyword(mpl, "end")))
+    {  /* parse statement */
+        stmt = mpl_internal_simple_statement(mpl, 0);
+        /* and append it to the end of the statement list */
+        if (last_stmt == null)
+            mpl.model = stmt;
+        else
+            last_stmt.next = stmt;
+        last_stmt = stmt;
+    }
+}
+
+/* glpmpl02.c */
+
+/**********************************************************************/
+/* * *                  PROCESSING DATA SECTION                   * * */
+/**********************************************************************/
+
+function mpl_internal_expand_slice
+    (   mpl,
+        slice,           /* destroyed */
+        sym             /* destroyed */
+        ){
+    var temp;
+    /* create a new component */
+    var tail = {};
+    tail.sym = sym;
+    tail.next = null;
+    /* and append it to the component list */
+    if (slice == null)
+        slice = tail;
+    else
+    {  for (temp = slice; temp.next != null; temp = temp.next){}
+        temp.next = tail;
+    }
+    return slice;
+}
+
+function mpl_internal_slice_dimen
+    (   mpl,
+        slice            /* not changed */
+        ){
+    var temp;
+
+    var dim = 0;
+    for (temp = slice; temp != null; temp = temp.next) dim++;
+    return dim;
+}
+
+function mpl_internal_slice_arity
+    (   mpl,
+        slice            /* not changed */
+        ){
+    var temp;
+
+    var arity = 0;
+    for (temp = slice; temp != null; temp = temp.next)
+        if (temp.sym == null) arity++;
+    return arity;
+}
+
+function mpl_internal_fake_slice(mpl, dim){
+    var slice = null;
+    while (dim-- > 0) slice = mpl_internal_expand_slice(mpl, slice, null);
+    return slice;
+}
+
+function mpl_internal_delete_slice
+    (   mpl,
+        slice            /* destroyed */
+        ){
+    var temp;
+    while (slice != null)
+    {  temp = slice;
+        slice = temp.next;
+    }
+}
+
+function mpl_internal_is_number(mpl){
+    return mpl.token == T_NUMBER;
+}
+
+function mpl_internal_is_symbol(mpl){
+    return mpl.token == T_NUMBER ||
+        mpl.token == T_SYMBOL ||
+        mpl.token == T_STRING;
+}
+
+function mpl_internal_is_literal(mpl, literal){
+    return mpl_internal_is_symbol(mpl) && mpl.image == literal;
+}
+
+function mpl_internal_read_number(mpl){
+    xassert(mpl_internal_is_number(mpl));
+    var num = mpl.value;
+    mpl_internal_get_token(mpl /* <number> */);
+    return num;
+}
+
+function mpl_internal_read_symbol(mpl){
+    var sym;
+    xassert(mpl_internal_is_symbol(mpl));
+    if (mpl_internal_is_number(mpl))
+        sym = mpl_internal_create_symbol_num(mpl, mpl.value);
+    else
+        sym = mpl_internal_create_symbol_str(mpl, mpl.image);
+    mpl_internal_get_token(mpl /* <symbol> */);
+    return sym;
+}
+
+function mpl_internal_read_slice(mpl, name, dim){
+    var slice;
+    var close;
+    xassert(name != null);
+    switch (mpl.token)
+    {  case T_LBRACKET:
+        close = T_RBRACKET;
+        break;
+        case T_LEFT:
+            xassert(dim > 0);
+            close = T_RIGHT;
+            break;
+        default:
+            xassert(mpl != mpl);
+    }
+    if (dim == 0)
+        mpl_internal_error(mpl, name + " cannot be subscripted");
+    mpl_internal_get_token(mpl /* ( | [ */);
+    /* read slice components */
+    slice = null;
+    for (;;)
+    {  /* the current token must be a symbol or asterisk */
+        if (mpl_internal_is_symbol(mpl))
+            slice = mpl_internal_expand_slice(mpl, slice, mpl_internal_read_symbol(mpl));
+        else if (mpl.token == T_ASTERISK)
+        {  slice = mpl_internal_expand_slice(mpl, slice, null);
+            mpl_internal_get_token(mpl /* * */);
+        }
+        else
+            mpl_internal_error(mpl, "number, symbol, or asterisk missing where expected");
+        /* check a token that follows the symbol */
+        if (mpl.token == T_COMMA)
+            mpl_internal_get_token(mpl /* , */);
+        else if (mpl.token == close)
+            break;
+        else
+            mpl_internal_error(mpl, "syntax error in slice");
+    }
+    /* number of slice components must be the same as the appropriate
+     dimension */
+    if (mpl_internal_slice_dimen(mpl, slice) != dim)
+    {  switch (close)
+    {  case T_RBRACKET:
+            mpl_internal_error(mpl, name + " must have " + dim +
+                " subscript" + (dim == 1 ? "" : "s") + ", not " + mpl_internal_slice_dimen(mpl, slice));
+            break;
+        case T_RIGHT:
+            mpl_internal_error(mpl, name + " has dimension " + dim + ", not " + mpl_internal_slice_dimen(mpl, slice));
+            break;
+        default:
+            xassert(close != close);
+    }
+    }
+    mpl_internal_get_token(mpl /* ) | ] */);
+    return slice;
+}
+
+function mpl_internal_select_set
+    (   mpl,
+        name              /* not changed */
+        ){
+    var set;
+    var node;
+    xassert(name != null);
+    node = mpl.tree[name];
+    if (node == null || node.type != A_SET)
+        mpl_internal_error(mpl, name + " not a set");
+    set = node.link;
+    if (set.assign != null || set.gadget != null)
+        mpl_internal_error(mpl, name + " needs no data");
+    set.data = 1;
+    return set;
+}
+
+function mpl_internal_simple_format
+    (   mpl,
+        set,               /* not changed */
+        memb,           /* modified */
+        slice            /* not changed */
+        ){
+    var tuple;
+    var temp;
+    var sym, with_ = null;
+    xassert(set != null);
+    xassert(memb != null);
+    xassert(slice != null);
+    xassert(set.dimen == mpl_internal_slice_dimen(mpl, slice));
+    xassert(memb.value.set.dim == set.dimen);
+    if (mpl_internal_slice_arity(mpl, slice) > 0) xassert(mpl_internal_is_symbol(mpl));
+    /* read symbols and construct complete n-tuple */
+    tuple = null;
+    for (temp = slice; temp != null; temp = temp.next)
+    {  if (temp.sym == null)
+    {  /* substitution is needed; read symbol */
+        if (!mpl_internal_is_symbol(mpl))
+        {  var lack = mpl_internal_slice_arity(mpl, temp);
+            /* with cannot be null due to assertion above */
+            xassert(with_ != null);
+            if (lack == 1)
+                mpl_internal_error(mpl, "one item missing in data group beginning with " + mpl_internal_format_symbol(mpl, with_));
+            else
+                mpl_internal_error(mpl, lack + " items missing in data group beginning with " + mpl_internal_format_symbol(mpl, with_));
+        }
+        sym = mpl_internal_read_symbol(mpl);
+        if (with_ == null) with_ = sym;
+    }
+    else
+    {  /* copy symbol from the slice */
+        sym = mpl_internal_copy_symbol(mpl, temp.sym);
+    }
+        /* append the symbol to the n-tuple */
+        tuple = mpl_internal_expand_tuple(mpl, tuple, sym);
+        /* skip optional comma *between* <symbols> */
+        if (temp.next != null && mpl.token == T_COMMA)
+            mpl_internal_get_token(mpl /* , */);
+    }
+    /* add constructed n-tuple to elemental set */
+    mpl_internal_check_then_add(mpl, memb.value.set, tuple);
+}
+
+function mpl_internal_matrix_format
+    (   mpl,
+        set,               /* not changed */
+        memb,           /* modified */
+        slice,           /* not changed */
+        tr
+        ){
+    var list, col, temp;
+    var tuple;
+    var row;
+    xassert(set != null);
+    xassert(memb != null);
+    xassert(slice != null);
+    xassert(set.dimen == mpl_internal_slice_dimen(mpl, slice));
+    xassert(memb.value.set.dim == set.dimen);
+    xassert(mpl_internal_slice_arity(mpl, slice) == 2);
+    /* read the matrix heading that contains column symbols (there
+     may be no columns at all) */
+    list = null;
+    while (mpl.token != T_ASSIGN)
+    {  /* read column symbol and append it to the column list */
+        if (!mpl_internal_is_symbol(mpl))
+            mpl_internal_error(mpl, "number, symbol, or := missing where expected");
+        list = mpl_internal_expand_slice(mpl, list, mpl_internal_read_symbol(mpl));
+    }
+    mpl_internal_get_token(mpl /* := */);
+    /* read zero or more rows that contain matrix data */
+    while (mpl_internal_is_symbol(mpl))
+    {  /* read row symbol (if the matrix has no columns, row symbols
+     are just ignored) */
+        row = mpl_internal_read_symbol(mpl);
+        /* read the matrix row accordingly to the column list */
+        for (col = list; col != null; col = col.next)
+        {  var which = 0;
+            /* check indicator */
+            if (mpl_internal_is_literal(mpl, "+")){
+
+            }
+            else if (mpl_internal_is_literal(mpl, "-"))
+            {  mpl_internal_get_token(mpl /* - */);
+                continue;
+            }
+            else
+            {  var lack = mpl_internal_slice_dimen(mpl, col);
+                if (lack == 1)
+                    mpl_internal_error(mpl, "one item missing in data group beginning with " + mpl_internal_format_symbol(mpl, row));
+                else
+                    mpl_internal_error(mpl, lack + " items missing in data group beginning with " + mpl_internal_format_symbol(mpl, row));
+            }
+            /* construct complete n-tuple */
+            tuple = null;
+            for (temp = slice; temp != null; temp = temp.next)
+            {  if (temp.sym == null)
+            {  /* substitution is needed */
+                switch (++which)
+                {  case 1:
+                    /* substitute in the first null position */
+                    tuple = mpl_internal_expand_tuple(mpl, tuple,
+                        mpl_internal_copy_symbol(mpl, tr ? col.sym : row));
+                    break;
+                    case 2:
+                        /* substitute in the second null position */
+                        tuple = mpl_internal_expand_tuple(mpl, tuple,
+                            mpl_internal_copy_symbol(mpl, tr ? row : col.sym));
+                        break;
+                    default:
+                        xassert(which != which);
+                }
+            }
+            else
+            {  /* copy symbol from the slice */
+                tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_copy_symbol(mpl,
+                    temp.sym));
+            }
+            }
+            xassert(which == 2);
+            /* add constructed n-tuple to elemental set */
+            mpl_internal_check_then_add(mpl, memb.value.set, tuple);
+            mpl_internal_get_token(mpl /* + */);
+        }
+    }
+    /* delete the column list */
+    mpl_internal_delete_slice(mpl, list);
+}
+
+function mpl_internal_set_data(mpl){
+    var set;
+    var tuple;
+    var memb;
+    var slice;
+    var tr = 0;
+
+    function err1(){mpl_internal_error(mpl, "slice currently used must specify 2 asterisks, not " + mpl_internal_slice_arity(mpl, slice))}
+    function err2(){mpl_internal_error(mpl, "transpose indicator (tr) incomplete")}
+    function left(){
+        /* left parenthesis begins the "transpose" indicator, which
+         is followed by data in the matrix format */
+        mpl_internal_get_token(mpl /* ( */);
+        if (!mpl_internal_is_literal(mpl, "tr"))
+            err2();
+        if (mpl_internal_slice_arity(mpl, slice) != 2) err1();
+        mpl_internal_get_token(mpl /* tr */);
+        if (mpl.token != T_RIGHT) err2();
+        mpl_internal_get_token(mpl /* ) */);
+        /* in this case the colon is optional */
+        if (mpl.token == T_COLON) mpl_internal_get_token(mpl /* : */);
+        /* set the "transpose" indicator */
+        tr = 1;
+        /* read elemental set data in the matrix format */
+        mpl_internal_matrix_format(mpl, set, memb, slice, tr);
+    }
+
+    xassert(mpl_internal_is_literal(mpl, "set"));
+    mpl_internal_get_token(mpl /* set */);
+    /* symbolic name of set must follows the keyword 'set' */
+    if (!mpl_internal_is_symbol(mpl))
+        mpl_internal_error(mpl, "set name missing where expected");
+    /* select the set to saturate it with data */
+    set = mpl_internal_select_set(mpl, mpl.image);
+    mpl_internal_get_token(mpl /* <symbolic name> */);
+    /* read optional subscript list, which identifies member of the
+     set to be read */
+    tuple = null;
+    if (mpl.token == T_LBRACKET)
+    {  /* subscript list is specified */
+        if (set.dim == 0)
+            mpl_internal_error(mpl, set.name + " cannot be subscripted");
+        mpl_internal_get_token(mpl /* [ */);
+        /* read symbols and construct subscript list */
+        for (;;)
+        {  if (!mpl_internal_is_symbol(mpl))
+            mpl_internal_error(mpl, "number or symbol missing where expected");
+            tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_read_symbol(mpl));
+            if (mpl.token == T_COMMA)
+                mpl_internal_get_token(mpl /* , */);
+            else if (mpl.token == T_RBRACKET)
+                break;
+            else
+                mpl_internal_error(mpl, "syntax error in subscript list");
+        }
+        if (set.dim != mpl_internal_tuple_dimen(mpl, tuple))
+            mpl_internal_error(mpl, set.name + " must have " + set.dim + " subscript" + (set.dim == 1 ? "" : "s")
+                + " rather than " + mpl_internal_tuple_dimen(mpl, tuple));
+        mpl_internal_get_token(mpl /* ] */);
+    }
+    else
+    {  /* subscript list is not specified */
+        if (set.dim != 0)
+            mpl_internal_error(mpl, set.name + " must be subscripted");
+    }
+    /* there must be no member with the same subscript list */
+    if (mpl_internal_find_member(mpl, set.array, tuple) != null)
+        mpl_internal_error(mpl, set.name + mpl_internal_format_tuple(mpl, '[', tuple) + " already defined");
+    /* add new member to the set and assign it empty elemental set */
+    memb = mpl_internal_add_member(mpl, set.array, tuple);
+    memb.value.set = mpl_internal_create_elemset(mpl, set.dimen);
+    /* create an initial fake slice of all asterisks */
+    slice = mpl_internal_fake_slice(mpl, set.dimen);
+    /* read zero or more data assignments */
+    for (;;)
+    {  /* skip optional comma */
+        if (mpl.token == T_COMMA) mpl_internal_get_token(mpl /* , */);
+        /* process assignment element */
+        if (mpl.token == T_ASSIGN)
+        {  /* assignment ligature is non-significant element */
+            mpl_internal_get_token(mpl /* := */);
+        }
+        else if (mpl.token == T_LEFT)
+        {  /* left parenthesis begins either new slice or "transpose"
+         indicator */
+            var is_tr;
+            mpl_internal_get_token(mpl /* ( */);
+            is_tr = mpl_internal_is_literal(mpl, "tr");
+            mpl_internal_unget_token(mpl /* ( */);
+            if (is_tr) {
+                left();
+            } else {
+                /* delete the current slice and read new one */
+                mpl_internal_delete_slice(mpl, slice);
+                slice = mpl_internal_read_slice(mpl, set.name, set.dimen);
+                /* each new slice resets the "transpose" indicator */
+                tr = 0;
+                /* if the new slice is 0-ary, formally there is one 0-tuple
+                 (in the simple format) that follows it */
+                if (mpl_internal_slice_arity(mpl, slice) == 0)
+                    mpl_internal_simple_format(mpl, set, memb, slice);
+            }
+        }
+        else if (mpl_internal_is_symbol(mpl))
+        {  /* number or symbol begins data in the simple format */
+            mpl_internal_simple_format(mpl, set, memb, slice);
+        }
+        else if (mpl.token == T_COLON)
+        {  /* colon begins data in the matrix format */
+            if (mpl_internal_slice_arity(mpl, slice) != 2)
+                err1();
+            mpl_internal_get_token(mpl /* : */);
+            /* read elemental set data in the matrix format */
+            mpl_internal_matrix_format(mpl, set, memb, slice, tr);
+        }
+        else if (mpl.token == T_LEFT){
+            left();
+        }
+        else if (mpl.token == T_SEMICOLON)
+        {  /* semicolon terminates the data block */
+            mpl_internal_get_token(mpl /* ; */);
+            break;
+        }
+        else
+            mpl_internal_error(mpl, "syntax error in set data block");
+    }
+    /* delete the current slice */
+    mpl_internal_delete_slice(mpl, slice);
+}
+
+function mpl_internal_select_parameter(
+    mpl,
+    name              /* not changed */
+    ){
+    var par;
+    var node;
+    xassert(name != null);
+    node = mpl.tree[name];
+    if (node == null || node.type != A_PARAMETER)
+        mpl_internal_error(mpl, name + " not a parameter");
+    par = node.link;
+    if (par.assign != null)
+        mpl_internal_error(mpl, name + " needs no data");
+    if (par.data)
+        mpl_internal_error(mpl, name + " already provided with data");
+    par.data = 1;
+    return par;
+}
+
+function mpl_internal_set_default(
+    mpl,
+    par,         /* not changed */
+    altval          /* destroyed */
+    ){
+    xassert(par != null);
+    xassert(altval != null);
+    if (par.option != null)
+        mpl_internal_error(mpl, "default value for " + par.name + " already specified in model section");
+    xassert(par.defval == null);
+    par.defval = altval;
+}
+
+function mpl_internal_read_value
+    (   mpl,
+        par,         /* not changed */
+        tuple            /* destroyed */
+        ){
+    var memb;
+    xassert(par != null);
+    xassert(mpl_internal_is_symbol(mpl));
+    /* there must be no member with the same n-tuple */
+    if (mpl_internal_find_member(mpl, par.array, tuple) != null)
+        mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " already defined");
+    /* create new parameter member with given n-tuple */
+    memb = mpl_internal_add_member(mpl, par.array, tuple);
+    /* read value and assigns it to the new parameter member */
+    switch (par.type)
+    {  case A_NUMERIC:
+        case A_INTEGER:
+        case A_BINARY:
+            if (!mpl_internal_is_number(mpl))
+                mpl_internal_error(mpl, par.name + " requires numeric data");
+            memb.value.num = mpl_internal_read_number(mpl);
+            break;
+        case A_SYMBOLIC:
+            memb.value.sym = mpl_internal_read_symbol(mpl);
+            break;
+        default:
+            xassert(par != par);
+    }
+    return memb;
+}
+
+function mpl_internal_plain_format
+    (   mpl,
+        par,         /* not changed */
+        slice            /* not changed */
+        )
+{
+    var tuple;
+    var temp;
+    var sym, with_ = null;
+    xassert(par != null);
+    xassert(par.dim == mpl_internal_slice_dimen(mpl, slice));
+    xassert(mpl_internal_is_symbol(mpl));
+    /* read symbols and construct complete subscript list */
+    tuple = null;
+    for (temp = slice; temp != null; temp = temp.next)
+    {  if (temp.sym == null)
+    {  /* substitution is needed; read symbol */
+        if (!mpl_internal_is_symbol(mpl))
+        {   var lack = mpl_internal_slice_arity(mpl, temp) + 1;
+            xassert(with_ != null);
+            xassert(lack > 1);
+            mpl_internal_error(mpl, lack + " items missing in data group beginning with " + mpl_internal_format_symbol(mpl, with_));
+        }
+        sym = mpl_internal_read_symbol(mpl);
+        if (with_ == null) with_ = sym;
+    }
+    else
+    {  /* copy symbol from the slice */
+        sym = mpl_internal_copy_symbol(mpl, temp.sym);
+    }
+        /* append the symbol to the subscript list */
+        tuple = mpl_internal_expand_tuple(mpl, tuple, sym);
+        /* skip optional comma */
+        if (mpl.token == T_COMMA) mpl_internal_get_token(mpl /* , */);
+    }
+    /* read value and assign it to new parameter member */
+    if (!mpl_internal_is_symbol(mpl))
+    {  xassert(with_ != null);
+        mpl_internal_error(mpl, "one item missing in data group beginning with " + mpl_internal_format_symbol(mpl, with_));
+    }
+    mpl_internal_read_value(mpl, par, tuple);
+}
+
+function mpl_internal_tabular_format
+    (   mpl,
+        par,         /* not changed */
+        slice,           /* not changed */
+        tr
+        ){
+    var list, col, temp;
+    var tuple;
+    var row;
+    xassert(par != null);
+    xassert(par.dim == mpl_internal_slice_dimen(mpl, slice));
+    xassert(mpl_internal_slice_arity(mpl, slice) == 2);
+    /* read the table heading that contains column symbols (the table
+     may have no columns) */
+    list = null;
+    while (mpl.token != T_ASSIGN)
+    {  /* read column symbol and append it to the column list */
+        if (!mpl_internal_is_symbol(mpl))
+            mpl_internal_error(mpl, "number, symbol, or := missing where expected");
+        list = mpl_internal_expand_slice(mpl, list, mpl_internal_read_symbol(mpl));
+    }
+    mpl_internal_get_token(mpl /* := */);
+    /* read zero or more rows that contain tabular data */
+    while (mpl_internal_is_symbol(mpl))
+    {  /* read row symbol (if the table has no columns, these symbols
+     are just ignored) */
+        row = mpl_internal_read_symbol(mpl);
+        /* read values accordingly to the column list */
+        for (col = list; col != null; col = col.next)
+        {  var which = 0;
+            /* if the token is single point, no value is provided */
+            if (mpl_internal_is_literal(mpl, "."))
+            {  mpl_internal_get_token(mpl /* . */);
+                continue;
+            }
+            /* construct complete subscript list */
+            tuple = null;
+            for (temp = slice; temp != null; temp = temp.next)
+            {  if (temp.sym == null)
+            {  /* substitution is needed */
+                switch (++which)
+                {  case 1:
+                    /* substitute in the first null position */
+                    tuple = mpl_internal_expand_tuple(mpl, tuple,
+                        mpl_internal_copy_symbol(mpl, tr ? col.sym : row));
+                    break;
+                    case 2:
+                        /* substitute in the second null position */
+                        tuple = mpl_internal_expand_tuple(mpl, tuple,
+                            mpl_internal_copy_symbol(mpl, tr ? row : col.sym));
+                        break;
+                    default:
+                        xassert(which != which);
+                }
+            }
+            else
+            {  /* copy symbol from the slice */
+                tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_copy_symbol(mpl,
+                    temp.sym));
+            }
+            }
+            xassert(which == 2);
+            /* read value and assign it to new parameter member */
+            if (!mpl_internal_is_symbol(mpl))
+            {  var lack = mpl_internal_slice_dimen(mpl, col);
+                if (lack == 1)
+                    mpl_internal_error(mpl, "one item missing in data group beginning with " + mpl_internal_format_symbol(mpl, row));
+                else
+                    mpl_internal_error(mpl, lack + " items missing in data group beginning with " + mpl_internal_format_symbol(mpl, row));
+            }
+            mpl_internal_read_value(mpl, par, tuple);
+        }
+    }
+    /* delete the column list */
+    mpl_internal_delete_slice(mpl, list);
+}
+
+function mpl_internal_tabbing_format
+    (   mpl,
+        altval          /* not changed */
+        ){
+    var set = null;
+    var par;
+    var list, col;
+    var tuple;
+    var next_token, j, dim = 0;
+    var last_name = null;
+    /* read the optional <prefix> */
+    if (mpl_internal_is_symbol(mpl))
+    {  mpl_internal_get_token(mpl /* <symbol> */);
+        next_token = mpl.token;
+        mpl_internal_unget_token(mpl /* <symbol> */);
+        if (next_token == T_COLON)
+        {  /* select the set to saturate it with data */
+            set = mpl_internal_select_set(mpl, mpl.image);
+            /* the set must be simple (i.e. not set of sets) */
+            if (set.dim != 0)
+                mpl_internal_error(mpl, set.name + " must be a simple set");
+            /* and must not be defined yet */
+            if (set.array.head != null)
+                mpl_internal_error(mpl, set.name + " already defined");
+            /* add new (the only) member to the set and assign it empty
+             elemental set */
+            mpl_internal_add_member(mpl, set.array, null).value.set =
+                mpl_internal_create_elemset(mpl, set.dimen);
+            last_name = set.name; dim = set.dimen;
+            mpl_internal_get_token(mpl /* <symbol> */);
+            xassert(mpl.token == T_COLON);
+            mpl_internal_get_token(mpl /* : */);
+        }
+    }
+    /* read the table heading that contains parameter names */
+    list = null;
+    while (mpl.token != T_ASSIGN)
+    {  /* there must be symbolic name of parameter */
+        if (!mpl_internal_is_symbol(mpl))
+            mpl_internal_error(mpl, "parameter name or := missing where expected");
+        /* select the parameter to saturate it with data */
+        par = mpl_internal_select_parameter(mpl, mpl.image);
+        /* the parameter must be subscripted */
+        if (par.dim == 0)
+            mpl_internal_error(mpl, mpl.image + " not a subscripted parameter");
+        /* the set (if specified) and all the parameters in the data
+         block must have identical dimension */
+        if (dim != 0 && par.dim != dim)
+        {  xassert(last_name != null);
+            mpl_internal_error(mpl, last_name + " has dimension " + dim + " while " + par.name + " has dimension " + par.dim);
+        }
+        /* set default value for the parameter (if specified) */
+        if (altval != null)
+            mpl_internal_set_default(mpl, par, mpl_internal_copy_symbol(mpl, altval));
+        /* append the parameter to the column list */
+        list = mpl_internal_expand_slice(mpl, list, par);
+        last_name = par.name; dim = par.dim;
+        mpl_internal_get_token(mpl /* <symbol> */);
+        /* skip optional comma */
+        if (mpl.token == T_COMMA) mpl_internal_get_token(mpl /* , */);
+    }
+    if (mpl_internal_slice_dimen(mpl, list) == 0)
+        mpl_internal_error(mpl, "at least one parameter name required");
+    mpl_internal_get_token(mpl /* := */);
+    /* skip optional comma */
+    if (mpl.token == T_COMMA) mpl_internal_get_token(mpl /* , */);
+    /* read rows that contain tabbing data */
+    while (mpl_internal_is_symbol(mpl))
+    {  /* read subscript list */
+        var lack;
+        tuple = null;
+        for (j = 1; j <= dim; j++)
+        {  /* read j-th subscript */
+            if (!mpl_internal_is_symbol(mpl))
+            {   lack = mpl_internal_slice_dimen(mpl, list) + dim - j + 1;
+                xassert(tuple != null);
+                xassert(lack > 1);
+                mpl_internal_error(mpl, lack + " items missing in data group beginning with " + mpl_internal_format_symbol(mpl, tuple.sym));
+            }
+            /* read and append j-th subscript to the n-tuple */
+            tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_read_symbol(mpl));
+            /* skip optional comma *between* <symbols> */
+            if (j < dim && mpl.token == T_COMMA)
+                mpl_internal_get_token(mpl /* , */);
+        }
+        /* if the set is specified, add to it new n-tuple, which is a
+         copy of the subscript list just read */
+        if (set != null)
+            mpl_internal_check_then_add(mpl, set.array.head.value.set, mpl_internal_copy_tuple(mpl, tuple));
+        /* skip optional comma between <symbol> and <value> */
+        if (mpl.token == T_COMMA) mpl_internal_get_token(mpl /* , */);
+        /* read values accordingly to the column list */
+        for (col = list; col != null; col = col.next)
+        {  /* if the token is single point, no value is provided */
+            if (mpl_internal_is_literal(mpl, "."))
+            {  mpl_internal_get_token(mpl /* . */);
+                continue;
+            }
+            /* read value and assign it to new parameter member */
+            if (!mpl_internal_is_symbol(mpl))
+            {   lack = mpl_internal_slice_dimen(mpl, col);
+                xassert(tuple != null);
+                if (lack == 1)
+                    mpl_internal_error(mpl, "one item missing in data group beginning with " + mpl_internal_format_symbol(mpl, tuple.sym));
+                else
+                    mpl_internal_error(mpl, lack + " items missing in data group beginning with " + mpl_internal_format_symbol(mpl, tuple.sym));
+            }
+            mpl_internal_read_value(mpl, col.sym, mpl_internal_copy_tuple(mpl, tuple));
+            /* skip optional comma preceding the next value */
+            if (col.next != null && mpl.token == T_COMMA)
+                mpl_internal_get_token(mpl /* , */);
+        }
+        /* skip optional comma (only if there is next data group) */
+        if (mpl.token == T_COMMA)
+        {  mpl_internal_get_token(mpl /* , */);
+            if (!mpl_internal_is_symbol(mpl)) mpl_internal_unget_token(mpl /* , */);
+        }
+    }
+    /* delete the column list (it contains parameters, not symbols,
+     so nullify it before) */
+    for (col = list; col != null; col = col.next) col.sym = null;
+    mpl_internal_delete_slice(mpl, list);
+}
+
+function mpl_internal_parameter_data(mpl){
+    var par;
+    var altval = null;
+    var slice;
+    var tr = 0;
+    xassert(mpl_internal_is_literal(mpl, "param"));
+    mpl_internal_get_token(mpl /* param */);
+    /* read optional default value */
+    if (mpl_internal_is_literal(mpl, "default"))
+    {  mpl_internal_get_token(mpl /* default */);
+        if (!mpl_internal_is_symbol(mpl))
+            mpl_internal_error(mpl, "default value missing where expected");
+        altval = mpl_internal_read_symbol(mpl);
+        /* if the default value follows the keyword 'param', the next
+         token must be only the colon */
+        if (mpl.token != T_COLON)
+            mpl_internal_error(mpl, "colon missing where expected");
+    }
+    /* being used after the keyword 'param' or the optional default
+     value the colon begins data in the tabbing format */
+    if (mpl.token == T_COLON)
+    {  mpl_internal_get_token(mpl /* : */);
+        /* skip optional comma */
+        if (mpl.token == T_COMMA) mpl_internal_get_token(mpl /* , */);
+        /* read parameter data in the tabbing format */
+        mpl_internal_tabbing_format(mpl, altval);
+        /* the next token must be only semicolon */
+        if (mpl.token != T_SEMICOLON)
+            mpl_internal_error(mpl, "symbol, number, or semicolon missing where expected");
+        mpl_internal_get_token(mpl /* ; */);
+        return;
+    }
+    /* in other cases there must be symbolic name of parameter, which
+     follows the keyword 'param' */
+    if (!mpl_internal_is_symbol(mpl))
+        mpl_internal_error(mpl, "parameter name missing where expected");
+    /* select the parameter to saturate it with data */
+    par = mpl_internal_select_parameter(mpl, mpl.image);
+    mpl_internal_get_token(mpl /* <symbol> */);
+    /* read optional default value */
+    if (mpl_internal_is_literal(mpl, "default"))
+    {  mpl_internal_get_token(mpl /* default */);
+        if (!mpl_internal_is_symbol(mpl))
+            mpl_internal_error(mpl, "default value missing where expected");
+        altval = mpl_internal_read_symbol(mpl);
+        /* set default value for the parameter */
+        mpl_internal_set_default(mpl, par, altval);
+    }
+    /* create initial fake slice of all asterisks */
+    slice = mpl_internal_fake_slice(mpl, par.dim);
+    /* read zero or more data assignments */
+
+    function err1(){mpl_internal_error(mpl, par.name + " not a subscripted parameter")}
+    function err2(){mpl_internal_error(mpl, "slice currently used must specify 2 asterisks, not " + mpl_internal_slice_arity(mpl, slice))}
+    function err3(){mpl_internal_error(mpl, "transpose indicator (tr) incomplete")}
+
+    for (;;)
+    {  /* skip optional comma */
+        if (mpl.token == T_COMMA) mpl_internal_get_token(mpl /* , */);
+        /* process current assignment */
+        if (mpl.token == T_ASSIGN)
+        {  /* assignment ligature is non-significant element */
+            mpl_internal_get_token(mpl /* := */);
+        }
+        else if (mpl.token == T_LBRACKET)
+        {  /* left bracket begins new slice; delete the current slice
+         and read new one */
+            mpl_internal_delete_slice(mpl, slice);
+            slice = mpl_internal_read_slice(mpl, par.name, par.dim);
+            /* each new slice resets the "transpose" indicator */
+            tr = 0;
+        }
+        else if (mpl_internal_is_symbol(mpl))
+        {  /* number or symbol begins data in the plain format */
+            mpl_internal_plain_format(mpl, par, slice);
+        }
+        else if (mpl.token == T_COLON)
+        {  /* colon begins data in the tabular format */
+            if (par.dim == 0)
+                err1();
+            if (mpl_internal_slice_arity(mpl, slice) != 2)
+                err2();
+            mpl_internal_get_token(mpl /* : */);
+            /* read parameter data in the tabular format */
+            mpl_internal_tabular_format(mpl, par, slice, tr);
+        }
+        else if (mpl.token == T_LEFT)
+        {  /* left parenthesis begins the "transpose" indicator, which
+         is followed by data in the tabular format */
+            mpl_internal_get_token(mpl /* ( */);
+            if (!mpl_internal_is_literal(mpl, "tr"))
+                err3();
+            if (par.dim == 0) err1();
+            if (mpl_internal_slice_arity(mpl, slice) != 2) err2();
+            mpl_internal_get_token(mpl /* tr */);
+            if (mpl.token != T_RIGHT) err3();
+            mpl_internal_get_token(mpl /* ) */);
+            /* in this case the colon is optional */
+            if (mpl.token == T_COLON) mpl_internal_get_token(mpl /* : */);
+            /* set the "transpose" indicator */
+            tr = 1;
+            /* read parameter data in the tabular format */
+            mpl_internal_tabular_format(mpl, par, slice, tr);
+        }
+        else if (mpl.token == T_SEMICOLON)
+        {  /* semicolon terminates the data block */
+            mpl_internal_get_token(mpl /* ; */);
+            break;
+        }
+        else
+            mpl_internal_error(mpl, "syntax error in parameter data block");
+    }
+    /* delete the current slice */
+    mpl_internal_delete_slice(mpl, slice);
+}
+
+function mpl_internal_data_section(mpl){
+    while (!(mpl.token == T_EOF || mpl_internal_is_literal(mpl, "end")))
+    {   if (mpl_internal_is_literal(mpl, "set"))
+        mpl_internal_set_data(mpl);
+    else if (mpl_internal_is_literal(mpl, "param"))
+        mpl_internal_parameter_data(mpl);
+    else
+        mpl_internal_error(mpl, "syntax error in data section");
+    }
+}
+
+/* glpmpl03.c */
+
+/**********************************************************************/
+/* * *                   FLOATING-POINT NUMBERS                   * * */
+/**********************************************************************/
+
+function mpl_internal_fp_add(mpl, x, y){
+    if (x > 0.0 && y > 0.0 && x > + 0.999 * DBL_MAX - y ||
+        x < 0.0 && y < 0.0 && x < - 0.999 * DBL_MAX - y)
+        mpl_internal_error(mpl, x + " + " + y + "; floating-point overflow");
+    return x + y;
+}
+
+function mpl_internal_fp_sub(mpl, x, y){
+    if (x > 0.0 && y < 0.0 && x > + 0.999 * DBL_MAX + y ||
+        x < 0.0 && y > 0.0 && x < - 0.999 * DBL_MAX + y)
+        mpl_internal_error(mpl, x + " - " + y + "; floating-point overflow");
+    return x - y;
+}
+
+function mpl_internal_fp_less(mpl, x, y){
+    if (x < y) return 0.0;
+    if (x > 0.0 && y < 0.0 && x > + 0.999 * DBL_MAX + y)
+        mpl_internal_error(mpl, x+ " less " + y + "; floating-point overflow");
+    return x - y;
+}
+
+function mpl_internal_fp_mul(mpl, x, y){
+    if (Math.abs(y) > 1.0 && Math.abs(x) > (0.999 * DBL_MAX) / Math.abs(y))
+        mpl_internal_error(mpl, x + " * " + y + "; floating-point overflow");
+    return x * y;
+}
+
+function mpl_internal_fp_div(mpl, x, y){
+    if (Math.abs(y) < DBL_MIN)
+        mpl_internal_error(mpl, x + " / " + y + "; floating-point zero divide");
+    if (Math.abs(y) < 1.0 && Math.abs(x) > (0.999 * DBL_MAX) * Math.abs(y))
+        mpl_internal_error(mpl, x + " / " + y + "; floating-point overflow");
+    return x / y;
+}
+
+function mpl_internal_fp_idiv(mpl, x, y){
+    if (Math.abs(y) < DBL_MIN)
+        mpl_internal_error(mpl, x + " div " + y + "; floating-point zero divide");
+    if (Math.abs(y) < 1.0 && Math.abs(x) > (0.999 * DBL_MAX) * Math.abs(y))
+        mpl_internal_error(mpl, x + " div " + y + "; floating-point overflow");
+    x /= y;
+    return x > 0.0 ? Math.floor(x) : x < 0.0 ? Math.ceil(x) : 0.0;
+}
+
+function mpl_internal_fp_mod(mpl, x, y)
+{
+    var r;
+
+    if (x == 0.0)
+        r = 0.0;
+    else if (y == 0.0)
+        r = x;
+    else
+    {  r = Math.abs(x) % Math.abs(y);
+        if (r != 0.0)
+        {  if (x < 0.0) r = - r;
+            if (x > 0.0 && y < 0.0 || x < 0.0 && y > 0.0) r += y;
+        }
+    }
+    return r;
+}
+
+function mpl_internal_fp_power(mpl, x, y)
+{
+    var r;
+    if (x == 0.0 && y <= 0.0 || x < 0.0 && y != Math.floor(y))
+        mpl_internal_error(mpl, x + " ** " + y + "; result undefined");
+    if (x == 0.0) {
+        r = Math.pow(x, y);
+    } else {
+        if (Math.abs(x) > 1.0 && y > +1.0 &&
+            +Math.log(Math.abs(x)) > (0.999 * Math.log(DBL_MAX)) / y ||
+            Math.abs(x) < 1.0 && y < -1.0 &&
+                +Math.log(Math.abs(x)) < (0.999 * Math.log(DBL_MAX)) / y)
+            mpl_internal_error(mpl, x + " ** " + y + "; floating-point overflow");
+        if (Math.abs(x) > 1.0 && y < -1.0 &&
+            -Math.log(Math.abs(x)) < (0.999 * Math.log(DBL_MAX)) / y ||
+            Math.abs(x) < 1.0 && y > +1.0 &&
+                -Math.log(Math.abs(x)) > (0.999 * Math.log(DBL_MAX)) / y)
+            r = 0.0;
+        else
+            r = Math.pow(x, y);
+    }
+    return r;
+}
+
+function mpl_internal_fp_exp(mpl, x)
+{
+    if (x > 0.999 * Math.log(DBL_MAX))
+        mpl_internal_error(mpl, "exp(" + x + "); floating-point overflow");
+    return Math.exp(x);
+}
+
+function mpl_internal_fp_log(mpl, x)
+{     if (x <= 0.0)
+    mpl_internal_error(mpl, "log(" + x + "); non-positive argument");
+    return Math.log(x);
+}
+
+function mpl_internal_fp_log10(mpl, x)
+{
+    if (x <= 0.0)
+        mpl_internal_error(mpl, "log10(" + x + "); non-positive argument");
+    return Math.log(x) / Math.LN10;
+}
+
+function mpl_internal_fp_sqrt(mpl, x)
+{
+    if (x < 0.0)
+        mpl_internal_error(mpl, "sqrt(" + x + "); negative argument");
+    return Math.sqrt(x);
+}
+
+function mpl_internal_fp_sin(mpl, x)
+{
+    if (!(-1e6 <= x && x <= +1e6))
+        mpl_internal_error(mpl, "sin(" + x + "); argument too large");
+    return Math.sin(x);
+}
+
+function mpl_internal_fp_cos(mpl, x)
+{
+    if (!(-1e6 <= x && x <= +1e6))
+        mpl_internal_error(mpl, "cos(" + x + "); argument too large");
+    return Math.cos(x);
+}
+
+function mpl_internal_fp_atan(mpl, x)
+{
+
+    return Math.atan(x);
+}
+
+function mpl_internal_fp_atan2(mpl, y, x)
+{
+
+    return Math.atan2(y, x);
+}
+
+function mpl_internal_fp_round(mpl, x, n)
+{     var ten_to_n;
+    if (n != Math.floor(n))
+        mpl_internal_error(mpl, "round(" + x + ", " + n + "); non-integer second argument");
+    if (n <= DBL_DIG + 2)
+    {  ten_to_n = Math.pow(10.0, n);
+        if (Math.abs(x) < (0.999 * DBL_MAX) / ten_to_n)
+        {  x = Math.floor(x * ten_to_n + 0.5);
+            if (x != 0.0) x /= ten_to_n;
+        }
+    }
+    return x;
+}
+
+function mpl_internal_fp_trunc(mpl, x, n)
+{     var ten_to_n;
+    if (n != Math.floor(n))
+        mpl_internal_error(mpl, "trunc(" + x + ", " + n + "); non-integer second argument");
+    if (n <= DBL_DIG + 2)
+    {  ten_to_n = Math.pow(10.0, n);
+        if (Math.abs(x) < (0.999 * DBL_MAX) / ten_to_n)
+        {  x = (x >= 0.0 ? Math.floor(x * ten_to_n) : Math.ceil(x * ten_to_n));
+            if (x != 0.0) x /= ten_to_n;
+        }
+    }
+    return x;
+}
+
+/**********************************************************************/
+/* * *              PSEUDO-RANDOM NUMBER GENERATORS               * * */
+/**********************************************************************/
+
+function mpl_internal_fp_irand224(mpl)
+{
+    const two_to_the_24 = 0x1000000;
+    return rng_unif_rand(mpl.rand, two_to_the_24);
+}
+
+function mpl_internal_fp_uniform01(mpl)
+{
+    const two_to_the_31 = 0x80000000;
+    return rng_next_rand(mpl.rand) / two_to_the_31;
+}
+
+function mpl_internal_fp_uniform(mpl, a, b){
+    var x;
+    if (a >= b)
+        mpl_internal_error(mpl, "Uniform(" + a + ", " + b + "); invalid range");
+    x = mpl_internal_fp_uniform01(mpl);
+    x = mpl_internal_fp_add(mpl, a * (1.0 - x), b * x);
+    return x;
+}
+
+function mpl_internal_fp_normal01(mpl){
+    var x, y, r2;
+    do
+    {  /* choose x, y in uniform square (-1,-1) to (+1,+1) */
+        x = -1.0 + 2.0 * mpl_internal_fp_uniform01(mpl);
+        y = -1.0 + 2.0 * mpl_internal_fp_uniform01(mpl);
+        /* see if it is in the unit circle */
+        r2 = x * x + y * y;
+    } while (r2 > 1.0 || r2 == 0.0);
+    /* Box-Muller transform */
+    return y * Math.sqrt(-2.0 * Math.log(r2) / r2);
+}
+
+function mpl_internal_fp_normal(mpl, mu, sigma){
+    return mpl_internal_fp_add(mpl, mu, mpl_internal_fp_mul(mpl, sigma, mpl_internal_fp_normal01(mpl)));
+}
+
+/**********************************************************************/
+/* * *                SEGMENTED CHARACTER STRINGS                 * * */
+/**********************************************************************/
+
+function mpl_internal_compare_strings(mpl, str1, str2)
+{
+    if (str1 == str2)
+        return 0;
+    else if (str1 > str2)
+        return 1;
+    else
+        return -1;
+}
+
+/**********************************************************************/
+/* * *                          SYMBOLS                           * * */
+/**********************************************************************/
+
+function mpl_internal_create_symbol_num(mpl, num){
+    var sym = {};
+    sym.num = num;
+    sym.str = null;
+    return sym;
+}
+
+function mpl_internal_create_symbol_str(mpl, str){
+    xassert(str != null);
+    var sym = {};
+    sym.num = 0.0;
+    sym.str = str;
+    return sym;
+}
+
+function mpl_internal_copy_symbol(mpl, sym){
+    xassert(sym != null);
+    var copy = {};
+    if (sym.str == null)
+    {  copy.num = sym.num;
+        copy.str = null;
+    }
+    else
+    {  copy.num = 0.0;
+        copy.str = sym.str;
+    }
+    return copy;
+}
+
+function mpl_internal_compare_symbols(mpl, sym1, sym2){
+    xassert(sym1 != null);
+    xassert(sym2 != null);
+    /* let all numeric quantities precede all symbolic quantities */
+    if (sym1.str == null && sym2.str == null)
+    {  if (sym1.num < sym2.num) return -1;
+        if (sym1.num > sym2.num) return +1;
+        return 0;
+    }
+    if (sym1.str == null) return -1;
+    if (sym2.str == null) return +1;
+    return mpl_internal_compare_strings(mpl, sym1.str, sym2.str);
+}
+
+function mpl_internal_format_symbol(mpl, sym){
+    xassert(sym != null);
+    var buf;
+    if (sym.str == null)
+        buf = String(sym.num);
+    else
+    {
+        var quoted, j, len;
+        var str = sym.str;
+        if (!(isalpha(str[0]) || str[0] == '_'))
+            quoted = true;
+        else
+        {   quoted = false;
+            for (j = 1; j < str.length; j++)
+            {   if (!(isalnum(str[j]) || strchr("+-._", str[j]) >= 0))
+            {   quoted = true;
+                break;
+            }
+            }
+        }
+
+        buf = ''; len = 0;
+        function safe_append(c){if (len < 255) {buf += c; len++}}
+
+        if (quoted) safe_append('\'');
+        for (j = 0; j < str.length; j++)
+        {  if (quoted && str[j] == '\'') safe_append('\'');
+            safe_append(str[j]);
+        }
+        if (quoted) safe_append('\'');
+        if (len == 255) buf = buf.slice(0, 252) + "...";
+    }
+    xassert(buf.length <= 255);
+    return buf;
+}
+
+function mpl_internal_concat_symbols
+    (   mpl,
+        sym1,           /* destroyed */
+        sym2            /* destroyed */
+        ){
+    var str1, str2;
+    xassert(MAX_LENGTH >= DBL_DIG + DBL_DIG);
+
+    if (sym1.str == null)
+        str1 = String(sym1.num);
+    else
+        str1 = sym1.str;
+
+    if (sym2.str == null)
+        str2 = String(sym2.num);
+    else
+        str2 = sym2.str;
+
+    if (str1.length + str2.length > MAX_LENGTH)
+    {   var buf = mpl_internal_format_symbol(mpl, sym1);
+        xassert(buf.length < MAX_LENGTH);
+        mpl_internal_error(mpl, buf + " & " + mpl_internal_format_symbol(mpl, sym2) + "; resultant symbol exceeds " + MAX_LENGTH + " characters");
+    }
+    return mpl_internal_create_symbol_str(mpl, str1 + str2);
+}
+
+/**********************************************************************/
+/* * *                          N-TUPLES                          * * */
+/**********************************************************************/
+
+function mpl_internal_expand_tuple(mpl, tuple, sym){
+    var temp;
+    xassert(sym != null);
+    /* create a new component */
+    var tail = {};
+    tail.sym = sym;
+    tail.next = null;
+    /* and append it to the component list */
+    if (tuple == null)
+        tuple = tail;
+    else
+    {  for (temp = tuple; temp.next != null; temp = temp.next){}
+        temp.next = tail;
+    }
+    return tuple;
+}
+
+function mpl_internal_tuple_dimen(mpl, tuple){
+    var dim = 0;
+    for (var temp = tuple; temp != null; temp = temp.next) dim++;
+    return dim;
+}
+
+function mpl_internal_copy_tuple(mpl, tuple){
+    var head, tail;
+    if (tuple == null)
+        head = null;
+    else
+    {   head = tail = {};
+        for (; tuple != null; tuple = tuple.next)
+        {  xassert(tuple.sym != null);
+            tail.sym = mpl_internal_copy_symbol(mpl, tuple.sym);
+            if (tuple.next != null)
+                tail = tail.next = {};
+        }
+        tail.next = null;
+    }
+    return head;
+}
+
+function mpl_internal_compare_tuples(mpl, tuple1, tuple2){
+    var item1, item2;
+    var ret;
+    for (item1 = tuple1, item2 = tuple2; item1 != null;
+         item1 = item1.next, item2 = item2.next)
+    {  xassert(item2 != null);
+        xassert(item1.sym != null);
+        xassert(item2.sym != null);
+        ret = mpl_internal_compare_symbols(mpl, item1.sym, item2.sym);
+        if (ret != 0) return ret;
+    }
+    xassert(item2 == null);
+    return 0;
+}
+
+function mpl_internal_build_subtuple(mpl, tuple, dim){
+    var head = null;
+    for (var j = 1, temp = tuple; j <= dim; j++, temp = temp.next)
+    {  xassert(temp != null);
+        head = mpl_internal_expand_tuple(mpl, head, mpl_internal_copy_symbol(mpl, temp.sym));
+    }
+    return head;
+}
+
+function mpl_internal_format_tuple(mpl, c, tuple){
+    var temp;
+    var j, len = 0;
+    var buf = '', str = '', save;
+    function safe_append(c){if (len < 255) buf += c; len++}
+    var dim = mpl_internal_tuple_dimen(mpl, tuple);
+    if (c == '[' && dim > 0) safe_append('[');
+    if (c == '(' && dim > 1) safe_append('(');
+    for (temp = tuple; temp != null; temp = temp.next)
+    {  if (temp != tuple) safe_append(',');
+        xassert(temp.sym != null);
+        str = mpl_internal_format_symbol(mpl, temp.sym);
+        xassert(str.length <= 255);
+        for (j = 0; j < str.length; j++) safe_append(str[j]);
+    }
+    if (c == '[' && dim > 0) safe_append(']');
+    if (c == '(' && dim > 1) safe_append(')');
+    if (len == 255) buf = buf.slice(0,252) + "...";
+    xassert(buf.length <= 255);
+    return buf;
+}
+
+/**********************************************************************/
+/* * *                       ELEMENTAL SETS                       * * */
+/**********************************************************************/
+
+function mpl_internal_create_elemset(mpl, dim){
+    xassert(dim > 0);
+    return mpl_internal_create_array(mpl, A_NONE, dim);
+}
+
+function mpl_internal_find_tuple(mpl, set, tuple){
+    xassert(set != null);
+    xassert(set.type == A_NONE);
+    xassert(set.dim == mpl_internal_tuple_dimen(mpl, tuple));
+    return mpl_internal_find_member(mpl, set, tuple);
+}
+
+function mpl_internal_add_tuple(mpl, set, tuple){
+    var memb;
+    xassert(set != null);
+    xassert(set.type == A_NONE);
+    xassert(set.dim == mpl_internal_tuple_dimen(mpl, tuple));
+    memb = mpl_internal_add_member(mpl, set, tuple);
+    memb.value.none = null;
+    return memb;
+}
+
+function mpl_internal_check_then_add(mpl, set, tuple){
+    if (mpl_internal_find_tuple(mpl, set, tuple) != null)
+        mpl_internal_error(mpl, "duplicate tuple " + mpl_internal_format_tuple(mpl, '(', tuple) + " detected");
+    return mpl_internal_add_tuple(mpl, set, tuple);
+}
+
+function mpl_internal_copy_elemset(mpl, set){
+    var copy;
+    var memb;
+    xassert(set != null);
+    xassert(set.type == A_NONE);
+    xassert(set.dim > 0);
+    copy = mpl_internal_create_elemset(mpl, set.dim);
+    for (memb = set.head; memb != null; memb = memb.next)
+        mpl_internal_add_tuple(mpl, copy, mpl_internal_copy_tuple(mpl, memb.tuple));
+    return copy;
+}
+
+function mpl_internal_arelset_size(mpl, t0, tf, dt){
+    var temp;
+    if (dt == 0.0)
+        mpl_internal_error(mpl, t0 + " .. " + tf + " by " + dt + "; zero stride not allowed");
+    if (tf > 0.0 && t0 < 0.0 && tf > + 0.999 * DBL_MAX + t0)
+        temp = +DBL_MAX;
+    else if (tf < 0.0 && t0 > 0.0 && tf < - 0.999 * DBL_MAX + t0)
+        temp = -DBL_MAX;
+    else
+        temp = tf - t0;
+    if (Math.abs(dt) < 1.0 && Math.abs(temp) > (0.999 * DBL_MAX) * Math.abs(dt))
+    {  if (temp > 0.0 && dt > 0.0 || temp < 0.0 && dt < 0.0)
+        temp = +DBL_MAX;
+    else
+        temp = 0.0;
+    }
+    else
+    {  temp = Math.floor(temp / dt) + 1.0;
+        if (temp < 0.0) temp = 0.0;
+    }
+    xassert(temp >= 0.0);
+    if (temp > (INT_MAX - 1))
+        mpl_internal_error(mpl, t0 + " .. " + tf + " by " + dt + "; set too large");
+    return (temp + 0.5)|0;
+}
+
+function mpl_internal_arelset_member(mpl, t0, tf, dt, j){
+    xassert(1 <= j && j <= mpl_internal_arelset_size(mpl, t0, tf, dt));
+    return t0 + (j - 1) * dt;
+}
+
+function mpl_internal_create_arelset(mpl, t0, tf, dt){
+    var set = mpl_internal_create_elemset(mpl, 1);
+    var n = mpl_internal_arelset_size(mpl, t0, tf, dt);
+    for (var j = 1; j <= n; j++)
+    {
+        mpl_internal_add_tuple(mpl, set,
+            mpl_internal_expand_tuple(mpl, null,
+                mpl_internal_create_symbol_num(mpl,
+                    mpl_internal_arelset_member(mpl, t0, tf, dt, j))));
+    }
+    return set;
+}
+
+function mpl_internal_set_union(mpl, X, Y){
+    xassert(X != null);
+    xassert(X.type == A_NONE);
+    xassert(X.dim > 0);
+    xassert(Y != null);
+    xassert(Y.type == A_NONE);
+    xassert(Y.dim > 0);
+    xassert(X.dim == Y.dim);
+    for (var memb = Y.head; memb != null; memb = memb.next)
+    {  if (mpl_internal_find_tuple(mpl, X, memb.tuple) == null)
+        mpl_internal_add_tuple(mpl, X, mpl_internal_copy_tuple(mpl, memb.tuple));
+    }
+    return X;
+}
+
+function mpl_internal_set_diff(mpl, X, Y){
+    xassert(X != null);
+    xassert(X.type == A_NONE);
+    xassert(X.dim > 0);
+    xassert(Y != null);
+    xassert(Y.type == A_NONE);
+    xassert(Y.dim > 0);
+    xassert(X.dim == Y.dim);
+    var Z = mpl_internal_create_elemset(mpl, X.dim);
+    for (var memb = X.head; memb != null; memb = memb.next)
+    {  if (mpl_internal_find_tuple(mpl, Y, memb.tuple) == null)
+        mpl_internal_add_tuple(mpl, Z, mpl_internal_copy_tuple(mpl, memb.tuple));
+    }
+    return Z;
+}
+
+function mpl_internal_set_symdiff(mpl, X, Y){
+    var memb;
+    xassert(X != null);
+    xassert(X.type == A_NONE);
+    xassert(X.dim > 0);
+    xassert(Y != null);
+    xassert(Y.type == A_NONE);
+    xassert(Y.dim > 0);
+    xassert(X.dim == Y.dim);
+    /* Z := X \ Y */
+    var Z = mpl_internal_create_elemset(mpl, X.dim);
+    for (memb = X.head; memb != null; memb = memb.next)
+    {  if (mpl_internal_find_tuple(mpl, Y, memb.tuple) == null)
+        mpl_internal_add_tuple(mpl, Z, mpl_internal_copy_tuple(mpl, memb.tuple));
+    }
+    /* Z := Z U (Y \ X) */
+    for (memb = Y.head; memb != null; memb = memb.next)
+    {  if (mpl_internal_find_tuple(mpl, X, memb.tuple) == null)
+        mpl_internal_add_tuple(mpl, Z, mpl_internal_copy_tuple(mpl, memb.tuple));
+    }
+    return Z;
+}
+
+function mpl_internal_set_inter(mpl, X, Y){
+    xassert(X != null);
+    xassert(X.type == A_NONE);
+    xassert(X.dim > 0);
+    xassert(Y != null);
+    xassert(Y.type == A_NONE);
+    xassert(Y.dim > 0);
+    xassert(X.dim == Y.dim);
+    var Z = mpl_internal_create_elemset(mpl, X.dim);
+    for (var memb = X.head; memb != null; memb = memb.next)
+    {  if (mpl_internal_find_tuple(mpl, Y, memb.tuple) != null)
+        mpl_internal_add_tuple(mpl, Z, mpl_internal_copy_tuple(mpl, memb.tuple));
+    }
+    return Z;
+}
+
+function mpl_internal_set_cross(mpl, X, Y){
+    var memx, memy;
+    var tuple, temp;
+    xassert(X != null);
+    xassert(X.type == A_NONE);
+    xassert(X.dim > 0);
+    xassert(Y != null);
+    xassert(Y.type == A_NONE);
+    xassert(Y.dim > 0);
+    var Z = mpl_internal_create_elemset(mpl, X.dim + Y.dim);
+    for (memx = X.head; memx != null; memx = memx.next)
+    {  for (memy = Y.head; memy != null; memy = memy.next)
+    {  tuple = mpl_internal_copy_tuple(mpl, memx.tuple);
+        for (temp = memy.tuple; temp != null; temp = temp.next)
+            tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_copy_symbol(mpl,
+                temp.sym));
+        mpl_internal_add_tuple(mpl, Z, tuple);
+    }
+    }
+    return Z;
+}
+
+/**********************************************************************/
+/* * *                        LINEAR FORMS                        * * */
+/**********************************************************************/
+
+function mpl_internal_constant_term(mpl, coef){
+    var form;
+    if (coef == 0.0)
+        form = null;
+    else
+    {   form = {};
+        form.coef = coef;
+        form.var = null;
+        form.next = null;
+    }
+    return form;
+}
+
+function mpl_internal_single_variable(mpl, var_){
+    xassert(var_ != null);
+    var form = {};
+    form.coef = 1.0;
+    form.var = var_;
+    form.next = null;
+    return form;
+}
+
+function mpl_internal_copy_formula(mpl, form){
+    var head, tail;
+    if (form == null)
+        head = null;
+    else
+    {  head = tail = {};
+        for (; form != null; form = form.next)
+        {  tail.coef = form.coef;
+            tail.var = form.var;
+            if (form.next != null)
+                tail = tail.next = {};
+        }
+        tail.next = null;
+    }
+    return head;
+}
+
+function mpl_internal_linear_comb(mpl, a, fx, b, fy){
+    var form = null, term, temp;
+    var c0 = 0.0;
+    for (term = fx; term != null; term = term.next)
+    {  if (term.var == null)
+        c0 = mpl_internal_fp_add(mpl, c0, mpl_internal_fp_mul(mpl, a, term.coef));
+    else
+        term.var.temp =
+            mpl_internal_fp_add(mpl, term.var.temp, mpl_internal_fp_mul(mpl, a, term.coef));
+    }
+    for (term = fy; term != null; term = term.next)
+    {  if (term.var == null)
+        c0 = mpl_internal_fp_add(mpl, c0, mpl_internal_fp_mul(mpl, b, term.coef));
+    else
+        term.var.temp =
+            mpl_internal_fp_add(mpl, term.var.temp, mpl_internal_fp_mul(mpl, b, term.coef));
+    }
+    for (term = fx; term != null; term = term.next)
+    {  if (term.var != null && term.var.temp != 0.0)
+    {  temp = {};
+        temp.coef = term.var.temp; temp.var = term.var;
+        temp.next = form; form = temp;
+        term.var.temp = 0.0;
+    }
+    }
+    for (term = fy; term != null; term = term.next)
+    {  if (term.var != null && term.var.temp != 0.0)
+    {  temp = {};
+        temp.coef = term.var.temp; temp.var = term.var;
+        temp.next = form; form = temp;
+        term.var.temp = 0.0;
+    }
+    }
+    if (c0 != 0.0)
+    {  temp = {};
+        temp.coef = c0; temp.var = null;
+        temp.next = form; form = temp;
+    }
+    return form;
+}
+
+function mpl_internal_remove_constant(mpl, form, callback){
+    var head = null, temp;
+    var coef = 0.0;
+    while (form != null)
+    {  temp = form;
+        form = form.next;
+        if (temp.var == null)
+        {  /* constant term */
+            coef = mpl_internal_fp_add(mpl, coef, temp.coef);
+        }
+        else
+        {  /* linear term */
+            temp.next = head;
+            head = temp;
+        }
+    }
+    callback(coef);
+    return head;
+}
+
+function mpl_internal_reduce_terms(mpl, form){
+    var term, next_term;
+    var c0 = 0.0;
+    for (term = form; term != null; term = term.next)
+    {  if (term.var == null)
+        c0 = mpl_internal_fp_add(mpl, c0, term.coef);
+    else
+        term.var.temp = mpl_internal_fp_add(mpl, term.var.temp, term.coef);
+    }
+    next_term = form; form = null;
+    for (term = next_term; term != null; term = next_term)
+    {  next_term = term.next;
+        if (term.var == null && c0 != 0.0)
+        {  term.coef = c0; c0 = 0.0;
+            term.next = form; form = term;
+        }
+        else if (term.var != null && term.var.temp != 0.0)
+        {  term.coef = term.var.temp; term.var.temp = 0.0;
+            term.next = form; form = term;
+        }
+    }
+    return form;
+}
+
+/**********************************************************************/
+/* * *                       GENERIC VALUES                       * * */
+/**********************************************************************/
+
+function mpl_internal_delete_value(mpl, type, value){
+    xassert(value != null);
+    switch (type)
+    {   case A_NONE:
+        value.none = null;
+        break;
+        case A_NUMERIC:
+            value.num = 0.0;
+            break;
+        case A_SYMBOLIC:
+            value.sym = null;
+            break;
+        case A_LOGICAL:
+            value.bit = 0;
+            break;
+        case A_TUPLE:
+            value.tuple = null;
+            break;
+        case A_ELEMSET:
+            value.set = null;
+            break;
+        case A_ELEMVAR:
+            value.var = null;
+            break;
+        case A_FORMULA:
+            value.form = null;
+            break;
+        case A_ELEMCON:
+            value.con = null;
+            break;
+        default:
+            xassert(type != type);
+    }
+}
+
+/**********************************************************************/
+/* * *                SYMBOLICALLY INDEXED ARRAYS                 * * */
+/**********************************************************************/
+
+function mpl_internal_create_array(mpl, type, dim){
+    xassert(type == A_NONE || type == A_NUMERIC ||
+        type == A_SYMBOLIC || type == A_ELEMSET ||
+        type == A_ELEMVAR || type == A_ELEMCON);
+    xassert(dim >= 0);
+    var array = {};
+    array.type = type;
+    array.dim = dim;
+    array.size = 0;
+    array.head = null;
+    array.tail = null;
+    array.tree = false;
+    array.prev = null;
+    array.next = mpl.a_list;
+    /* include the array in the global array list */
+    if (array.next != null) array.next.prev = array;
+    mpl.a_list = array;
+    return array;
+}
+
+function mpl_internal_compare_member_tuples(info, key1, key2){
+    /* this is an auxiliary routine used to compare keys, which are
+     n-tuples assigned to array members */
+    return mpl_internal_compare_tuples(info, key1, key2);
+}
+
+function mpl_internal_find_member(mpl, array, tuple){
+    var memb;
+    xassert(array != null);
+    /* the n-tuple must have the same dimension as the array */
+    xassert(mpl_internal_tuple_dimen(mpl, tuple) == array.dim);
+    /* if the array is large enough, create the search tree and index
+     all existing members of the array */
+    if (array.size > 30 && !array.tree)
+    {  //array.tree = {};
+        for (memb = array.head; memb != null; memb = memb.next)
+            memb.tuple.memb = memb;
+        //array.tree[memb.tuple] = {link: memb};
+    }
+    /* find a member, which has the given tuple */
+    if (!array.tree)
+    {  /* the search tree doesn't exist; use the linear search */
+        for (memb = array.head; memb != null; memb = memb.next)
+            if (mpl_internal_compare_tuples(mpl, memb.tuple, tuple) == 0) break;
+    }
+    else
+    {  /* the search tree exists; use the binary search */
+        var node = tuple.memb;
+        memb = (node == null ? null : node.link);
+    }
+    return memb;
+}
+
+function mpl_internal_add_member(mpl, array, tuple){
+    xassert(array != null);
+    /* the n-tuple must have the same dimension as the array */
+    xassert(mpl_internal_tuple_dimen(mpl, tuple) == array.dim);
+    /* create new member */
+    var memb = {};
+    memb.tuple = tuple;
+    memb.next = null;
+    memb.value = {};
+    /* and append it to the member list */
+    array.size++;
+    if (array.head == null)
+        array.head = memb;
+    else
+        array.tail.next = memb;
+    array.tail = memb;
+    /* if the search tree exists, index the new member */
+    if (array.tree)
+        memb.tuple.memb = memb;
+    return memb;
+}
+
+/**********************************************************************/
+/* * *                 DOMAINS AND DUMMY INDICES                  * * */
+/**********************************************************************/
+
+function mpl_internal_assign_dummy_index(mpl, slot, value){
+    var leaf, code;
+    xassert(slot != null);
+    xassert(value != null);
+    /* delete the current value assigned to the dummy index */
+    if (slot.value != null)
+    {  /* if the current value and the new one are identical, actual
+     assignment is not needed */
+        if (mpl_internal_compare_symbols(mpl, slot.value, value) == 0) return;
+        /* delete a symbol, which is the current value */
+        slot.value = null;
+    }
+    /* now walk through all the pseudo-codes with op = O_INDEX, which
+     refer to the dummy index to be changed (these pseudo-codes are
+     leaves in the forest of *all* expressions in the database) */
+    for (leaf = slot.list; leaf != null; leaf = leaf.arg.index.
+        next)
+    {  xassert(leaf.op == O_INDEX);
+        /* invalidate all resultant values, which depend on the dummy
+         index, walking from the current leaf toward the root of the
+         corresponding expression tree */
+        for (code = leaf; code != null; code = code.up)
+        {  if (code.valid)
+        {  /* invalidate and delete resultant value */
+            code.valid = 0;
+            mpl_internal_delete_value(mpl, code.type, code.value);
+        }
+        }
+    }
+    /* assign new value to the dummy index */
+    slot.value = mpl_internal_copy_symbol(mpl, value);
+}
+
+function mpl_internal_update_dummy_indices(mpl, block){
+    var slot;
+    var temp;
+    if (block.backup != null)
+    {  for (slot = block.list, temp = block.backup; slot != null;
+            slot = slot.next, temp = temp.next)
+    {   xassert(temp != null);
+        xassert(temp.sym != null);
+        mpl_internal_assign_dummy_index(mpl, slot, temp.sym);
+    }
+    }
+}
+
+function mpl_internal_enter_domain_block(mpl, block, tuple, info, func){
+    var backup;
+    var ret = 0;
+    /* check if the given n-tuple is a member of the basic set */
+    xassert(block.code != null);
+    if (!mpl_internal_is_member(mpl, block.code, tuple))
+    {  ret = 1;
+        return ret;
+    }
+    /* save reference to "backup" n-tuple, which was used to assign
+     current values of the dummy indices (it is sufficient to save
+     reference, not value, because that n-tuple is defined in some
+     outer level of recursion and therefore cannot be changed on
+     this and deeper recursive calls) */
+    backup = block.backup;
+    /* set up new "backup" n-tuple, which defines new values of the
+     dummy indices */
+    block.backup = tuple;
+    /* assign new values to the dummy indices */
+    mpl_internal_update_dummy_indices(mpl, block);
+    /* call the formal routine that does the rest part of the job */
+    func(mpl, info);
+    /* restore reference to the former "backup" n-tuple */
+    block.backup = backup;
+    /* restore former values of the dummy indices; note that if the
+     domain block just escaped has no other active instances which
+     may exist due to recursion (it is indicated by a null pointer
+     to the former n-tuple), former values of the dummy indices are
+     undefined; therefore in this case the routine keeps currently
+     assigned values of the dummy indices that involves keeping all
+     dependent temporary results and thereby, if this domain block
+     is not used recursively, allows improving efficiency */
+    mpl_internal_update_dummy_indices(mpl, block);
+    return ret;
+}
+
+function mpl_internal_eval_domain_func(mpl, my_info)
+{     /* this routine recursively enters into the domain scope and then
+ calls the routine func */
+    if (my_info.block != null)
+    {  /* the current domain block to be entered exists */
+        var block;
+        var slot;
+        var tuple = null, temp = null;
+        /* save pointer to the current domain block */
+        block = my_info.block;
+        /* and get ready to enter the next block (if it exists) */
+        my_info.block = block.next;
+        /* construct temporary n-tuple, whose components correspond to
+         dummy indices (slots) of the current domain; components of
+         the temporary n-tuple that correspond to free dummy indices
+         are assigned references (not values!) to symbols specified
+         in the corresponding components of the given n-tuple, while
+         other components that correspond to non-free dummy indices
+         are assigned symbolic values computed here */
+        for (slot = block.list; slot != null; slot = slot.next)
+        {  /* create component that corresponds to the current slot */
+            if (tuple == null)
+                tuple = temp = {};
+            else
+                temp = temp.next = {};
+            if (slot.code == null)
+            {  /* dummy index is free; take reference to symbol, which
+             is specified in the corresponding component of given
+             n-tuple */
+                xassert(my_info.tuple != null);
+                temp.sym = my_info.tuple.sym;
+                xassert(temp.sym != null);
+                my_info.tuple = my_info.tuple.next;
+            }
+            else
+            {  /* dummy index is non-free; compute symbolic value to be
+             temporarily assigned to the dummy index */
+                temp.sym = mpl_internal_eval_symbolic(mpl, slot.code);
+            }
+        }
+        temp.next = null;
+        /* enter the current domain block */
+        if (mpl_internal_enter_domain_block(mpl, block, tuple, my_info,
+            mpl_internal_eval_domain_func)) my_info.failure = 1;
+        /* delete temporary n-tuple as well as symbols that correspond
+         to non-free dummy indices (they were computed here) */
+        for (slot = block.list; slot != null; slot = slot.next)
+        {  xassert(tuple != null);
+            temp = tuple;
+            tuple = tuple.next;
+        }
+    }
+    else
+    {  /* there are no more domain blocks, i.e. we have reached the
+     domain scope */
+        xassert(my_info.tuple == null);
+        /* check optional predicate specified for the domain */
+        if (my_info.domain.code != null && !mpl_internal_eval_logical(mpl,
+            my_info.domain.code))
+        {  /* the predicate is false */
+            my_info.failure = 2;
+        }
+        else
+        {  /* the predicate is true; do the job */
+            my_info.func(mpl, my_info.info);
+        }
+    }
+}
+
+function mpl_internal_eval_within_domain(mpl, domain, tuple, info, func){
+    /* this routine performs evaluation within domain scope */
+    var my_info = {};
+    if (domain == null)
+    {   xassert(tuple == null);
+        func(mpl, info);
+        my_info.failure = 0;
+    }
+    else
+    {   xassert(tuple != null);
+        my_info.domain = domain;
+        my_info.block = domain.list;
+        my_info.tuple = tuple;
+        my_info.info = info;
+        my_info.func = func;
+        my_info.failure = 0;
+        /* enter the very first domain block */
+        mpl_internal_eval_domain_func(mpl, my_info);
+    }
+    return my_info.failure;
+}
+
+function mpl_internal_loop_domain_func(mpl, my_info){
+    /* this routine enumerates all n-tuples in the basic set of the
+     current domain block, enters recursively into the domain scope
+     for every n-tuple, and then calls the routine func */
+    if (my_info.block != null)
+    {  /* the current domain block to be entered exists */
+        var block;
+        var slot;
+        var bound;
+        /* save pointer to the current domain block */
+        block = my_info.block;
+        /* and get ready to enter the next block (if it exists) */
+        my_info.block = block.next;
+        /* compute symbolic values, at which non-free dummy indices of
+         the current domain block are bound; since that values don't
+         depend on free dummy indices of the current block, they can
+         be computed once out of the enumeration loop */
+        bound = null;
+        for (slot = block.list; slot != null; slot = slot.next)
+        {  if (slot.code != null)
+            bound = mpl_internal_expand_tuple(mpl, bound, mpl_internal_eval_symbolic(mpl,
+                slot.code));
+        }
+        /* start enumeration */
+        xassert(block.code != null);
+        if (block.code.op == O_DOTS)
+        {  /* the basic set is "arithmetic", in which case it doesn't
+         need to be computed explicitly */
+            var tuple;
+            var n, j;
+            var t0, tf, dt;
+            /* compute "parameters" of the basic set */
+            t0 = mpl_internal_eval_numeric(mpl, block.code.arg.arg.x);
+            tf = mpl_internal_eval_numeric(mpl, block.code.arg.arg.y);
+            if (block.code.arg.arg.z == null)
+                dt = 1.0;
+            else
+                dt = mpl_internal_eval_numeric(mpl, block.code.arg.arg.z);
+            /* determine cardinality of the basic set */
+            n = mpl_internal_arelset_size(mpl, t0, tf, dt);
+            /* create dummy 1-tuple for members of the basic set */
+            tuple = mpl_internal_expand_tuple(mpl, null,
+                mpl_internal_create_symbol_num(mpl, 0.0));
+            /* in case of "arithmetic" set there is exactly one dummy
+             index, which cannot be non-free */
+            xassert(bound == null);
+            /* walk through 1-tuples of the basic set */
+            for (j = 1; j <= n && my_info.looping; j++)
+            {  /* construct dummy 1-tuple for the current member */
+                tuple.sym.num = mpl_internal_arelset_member(mpl, t0, tf, dt, j);
+                /* enter the current domain block */
+                mpl_internal_enter_domain_block(mpl, block, tuple, my_info,
+                    mpl_internal_loop_domain_func);
+            }
+        }
+        else
+        {  /* the basic set is of general kind, in which case it needs
+         to be explicitly computed */
+            var set;
+            var memb;
+            var temp1, temp2;
+            /* compute the basic set */
+            set = mpl_internal_eval_elemset(mpl, block.code);
+            /* walk through all n-tuples of the basic set */
+            for (memb = set.head; memb != null && my_info.looping;
+                 memb = memb.next)
+            {  /* all components of the current n-tuple that correspond
+             to non-free dummy indices must be feasible; otherwise
+             the n-tuple is not in the basic set */
+                temp1 = memb.tuple;
+                temp2 = bound;
+                var found = false;
+                for (slot = block.list; slot != null; slot = slot.next)
+                {  xassert(temp1 != null);
+                    if (slot.code != null)
+                    {  /* non-free dummy index */
+                        xassert(temp2 != null);
+                        if (mpl_internal_compare_symbols(mpl, temp1.sym, temp2.sym)
+                            != 0)
+                        {  /* the n-tuple is not in the basic set */
+                            found = true;
+                            break;
+                        }
+                        temp2 = temp2.next;
+                    }
+                    temp1 = temp1.next;
+                }
+                if (!found){
+                    xassert(temp1 == null);
+                    xassert(temp2 == null);
+                    /* enter the current domain block */
+                    mpl_internal_enter_domain_block(mpl, block, memb.tuple, my_info,
+                        mpl_internal_loop_domain_func);
+                }
+            }
+        }
+        /* restore pointer to the current domain block */
+        my_info.block = block;
+    }
+    else
+    {  /* there are no more domain blocks, i.e. we have reached the
+     domain scope */
+        /* check optional predicate specified for the domain */
+        if (my_info.domain.code != null && !mpl_internal_eval_logical(mpl,
+            my_info.domain.code))
+        {  /* the predicate is false */
+            /* nop */
+        }
+        else
+        {  /* the predicate is true; do the job */
+            my_info.looping = !my_info.func(mpl, my_info.info);
+        }
+    }
+}
+
+function mpl_internal_loop_within_domain(mpl, domain, info, func){
+    /* this routine performs iterations within domain scope */
+    var my_info = {};
+    if (domain == null)
+        func(mpl, info);
+    else
+    {   my_info.domain = domain;
+        my_info.block = domain.list;
+        my_info.looping = 1;
+        my_info.info = info;
+        my_info.func = func;
+        /* enter the very first domain block */
+        mpl_internal_loop_domain_func(mpl, my_info);
+    }
+}
+
+function mpl_internal_out_of_domain(mpl, name, tuple){
+    xassert(name != null);
+    xassert(tuple != null);
+    mpl_internal_error(mpl, name + mpl_internal_format_tuple(mpl, '[', tuple) + " out of domain");
+}
+
+function mpl_internal_get_domain_tuple(mpl, domain){
+    var tuple = null;
+    if (domain != null)
+    {  for (var block = domain.list; block != null; block = block.next)
+    {  for (var slot = block.list; slot != null; slot = slot.next)
+    {  if (slot.code == null)
+    {  xassert(slot.value != null);
+        tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_copy_symbol(mpl,
+            slot.value));
+    }
+    }
+    }
+    }
+    return tuple;
+}
+
+function mpl_internal_clean_domain(mpl, domain){
+    /* if no domain is specified, do nothing */
+    if (domain == null) return;
+    /* clean all domain blocks */
+    for (var block = domain.list; block != null; block = block.next)
+    {  /* clean all domain slots */
+        for (var slot = block.list; slot != null; slot = slot.next)
+        {  /* clean pseudo-code for computing bound value */
+            mpl_internal_clean_code(mpl, slot.code);
+            /* delete symbolic value assigned to dummy index */
+            slot.value = null;
+        }
+        /* clean pseudo-code for computing basic set */
+        mpl_internal_clean_code(mpl, block.code);
+    }
+    /* clean pseudo-code for computing domain predicate */
+    mpl_internal_clean_code(mpl, domain.code);
+}
+
+/**********************************************************************/
+/* * *                         MODEL SETS                         * * */
+/**********************************************************************/
+
+function mpl_internal_check_elem_set(mpl, set, tuple, refer){
+    /* elemental set must be within all specified supersets */
+    for (var within = set.within, eqno = 1; within != null; within =
+        within.next, eqno++)
+    {  xassert(within.code != null);
+        for (var memb = refer.head; memb != null; memb = memb.next)
+        {  if (!mpl_internal_is_member(mpl, within.code, memb.tuple))
+        {   var buf = mpl_internal_format_tuple(mpl, '(', memb.tuple);
+            xassert(buf.length < 255);
+            mpl_internal_error(mpl, set.name + mpl_internal_format_tuple(mpl, '[', tuple) +
+                " contains " + buf + " which not within specified set; see (" + eqno + ")");
+        }
+        }
+    }
+}
+
+function mpl_internal_take_member_set(mpl, set, tuple){
+    var refer;
+    /* find member in the set array */
+    var memb = mpl_internal_find_member(mpl, set.array, tuple);
+
+    function add(){
+        /* check that the elemental set satisfies to all restrictions,
+         assign it to new member, and add the member to the array */
+        mpl_internal_check_elem_set(mpl, set, tuple, refer);
+        memb = mpl_internal_add_member(mpl, set.array, mpl_internal_copy_tuple(mpl, tuple));
+        memb.value.set = refer;
+    }
+
+
+    if (memb != null)
+    {  /* member exists, so just take the reference */
+        refer = memb.value.set;
+    }
+    else if (set.assign != null)
+    {  /* compute value using assignment expression */
+        refer = mpl_internal_eval_elemset(mpl, set.assign);
+        add();
+    }
+    else if (set.option != null)
+    {  /* compute default elemental set */
+        refer = mpl_internal_eval_elemset(mpl, set.option);
+        add();
+    }
+    else
+    {  /* no value (elemental set) is provided */
+        mpl_internal_error(mpl, "no value for " + set.name + mpl_internal_format_tuple(mpl, '[', tuple));
+    }
+    return refer;
+}
+
+function mpl_internal_eval_set_func(mpl, info){
+    /* this is auxiliary routine to work within domain scope */
+    if (info.memb != null)
+    {  /* checking call; check elemental set being assigned */
+        mpl_internal_check_elem_set(mpl, info.set, info.memb.tuple,
+            info.memb.value.set);
+    }
+    else
+    {  /* normal call; evaluate member, which has given n-tuple */
+        info.refer = mpl_internal_take_member_set(mpl, info.set, info.tuple);
+    }
+}
+
+function mpl_internal_saturate_set(mpl, set){
+    var gadget = set.gadget;
+    var data;
+    var elem, memb;
+    var tuple, work = new Array(20);
+    var i;
+    xprintf("Generating " + set.name + "...");
+    mpl_internal_eval_whole_set(mpl, gadget.set);
+    /* gadget set must have exactly one member */
+    xassert(gadget.set.array != null);
+    xassert(gadget.set.array.head != null);
+    xassert(gadget.set.array.head == gadget.set.array.tail);
+    data = gadget.set.array.head.value.set;
+    xassert(data.type == A_NONE);
+    xassert(data.dim == gadget.set.dimen);
+    /* walk thru all elements of the plain set */
+    for (elem = data.head; elem != null; elem = elem.next)
+    {  /* create a copy of n-tuple */
+        tuple = mpl_internal_copy_tuple(mpl, elem.tuple);
+        /* rearrange component of the n-tuple */
+        for (i = 0; i < gadget.set.dimen; i++)
+            work[i] = null;
+        for (i = 0; tuple != null; tuple = tuple.next)
+            work[gadget.ind[i++]-1] = tuple;
+        xassert(i == gadget.set.dimen);
+        for (i = 0; i < gadget.set.dimen; i++)
+        {  xassert(work[i] != null);
+            work[i].next = work[i+1];
+        }
+        /* construct subscript list from first set.dim components */
+        if (set.dim == 0)
+            tuple = null;
+        else {
+            tuple = work[0]; work[set.dim-1].next = null;
+        }
+        /* find corresponding member of the set to be initialized */
+        memb = mpl_internal_find_member(mpl, set.array, tuple);
+        if (memb == null)
+        {  /* not found; add new member to the set and assign it empty
+         elemental set */
+            memb = mpl_internal_add_member(mpl, set.array, tuple);
+            memb.value.set = mpl_internal_create_elemset(mpl, set.dimen);
+        }
+        /* construct new n-tuple from rest set.dimen components */
+        tuple = work[set.dim];
+        xassert(set.dim + set.dimen == gadget.set.dimen);
+        work[gadget.set.dimen-1].next = null;
+        /* and add it to the elemental set assigned to the member
+         (no check for duplicates is needed) */
+        mpl_internal_add_tuple(mpl, memb.value.set, tuple);
+    }
+    /* the set has been saturated with data */
+    set.data = 1;
+}
+
+function mpl_internal_eval_member_set(mpl, set, tuple){
+    /* this routine evaluates set member */
+    var info = {};
+    xassert(set.dim == mpl_internal_tuple_dimen(mpl, tuple));
+    info.set = set;
+    info.tuple = tuple;
+    if (set.gadget != null && set.data == 0)
+    {  /* initialize the set with data from a plain set */
+        mpl_internal_saturate_set(mpl, set);
+    }
+    if (set.data == 1)
+    {  /* check data, which are provided in the data section, but not
+     checked yet */
+        /* save pointer to the last array member; note that during the
+         check new members may be added beyond the last member due to
+         references to the same parameter from default expression as
+         well as from expressions that define restricting supersets;
+         however, values assigned to the new members will be checked
+         by other routine, so we don't need to check them here */
+        var tail = set.array.tail;
+        /* change the data status to prevent infinite recursive loop
+         due to references to the same set during the check */
+        set.data = 2;
+        /* check elemental sets assigned to array members in the data
+         section until the marked member has been reached */
+        for (info.memb = set.array.head; info.memb != null;
+             info.memb = info.memb.next)
+        {  if (mpl_internal_eval_within_domain(mpl, set.domain, info.memb.tuple,
+            info, mpl_internal_eval_set_func))
+            mpl_internal_out_of_domain(mpl, set.name, info.memb.tuple);
+            if (info.memb == tail) break;
+        }
+        /* the check has been finished */
+    }
+    /* evaluate member, which has given n-tuple */
+    info.memb = null;
+    if (mpl_internal_eval_within_domain(mpl, info.set.domain, info.tuple, info,
+        mpl_internal_eval_set_func))
+        mpl_internal_out_of_domain(mpl, set.name, info.tuple);
+    /* bring evaluated reference to the calling program */
+    return info.refer;
+}
+
+function mpl_internal_whole_set_func(mpl, info){
+    /* this is auxiliary routine to work within domain scope */
+    var tuple = mpl_internal_get_domain_tuple(mpl, info.domain);
+    mpl_internal_eval_member_set(mpl, info, tuple);
+    return 0;
+}
+
+function mpl_internal_eval_whole_set(mpl, set){
+    mpl_internal_loop_within_domain(mpl, set.domain, set, mpl_internal_whole_set_func);
+}
+
+function mpl_internal_clean_set(mpl, set){
+    var within;
+    var memb;
+    /* clean subscript domain */
+    mpl_internal_clean_domain(mpl, set.domain);
+    /* clean pseudo-code for computing supersets */
+    for (within = set.within; within != null; within = within.next)
+        mpl_internal_clean_code(mpl, within.code);
+    /* clean pseudo-code for computing assigned value */
+    mpl_internal_clean_code(mpl, set.assign);
+    /* clean pseudo-code for computing default value */
+    mpl_internal_clean_code(mpl, set.option);
+    /* reset data status flag */
+    set.data = 0;
+    /* delete content array */
+    for (memb = set.array.head; memb != null; memb = memb.next)
+        mpl_internal_delete_value(mpl, set.array.type, memb.value);
+    set.array = null;
+}
+
+/**********************************************************************/
+/* * *                      MODEL PARAMETERS                      * * */
+/**********************************************************************/
+
+function mpl_internal_check_value_num(mpl, par, tuple, value){
+    var cond;
+    var eqno;
+    /* the value must satisfy to the parameter type */
+    switch (par.type)
+    {   case A_NUMERIC:
+        break;
+        case A_INTEGER:
+            if (value != Math.floor(value))
+                mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " = " + value + " not integer");
+            break;
+        case A_BINARY:
+            if (!(value == 0.0 || value == 1.0))
+                mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " = " + value + " not binary");
+            break;
+        default:
+            xassert(par != par);
+    }
+    /* the value must satisfy to all specified conditions */
+    for (cond = par.cond, eqno = 1; cond != null; cond = cond.next,
+        eqno++)
+    {   var bound;
+        //var rho;
+        xassert(cond.code != null);
+        bound = mpl_internal_eval_numeric(mpl, cond.code);
+
+        function err(rho){mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " = " + value + " not " + rho + " " + bound + "; see (" + eqno + ")")}
+
+        switch (cond.rho)
+        {   case O_LT:
+            if (!(value < bound))
+                err("<");
+            break;
+            case O_LE:
+                if (!(value <= bound)) err("<=");
+                break;
+            case O_EQ:
+                if (!(value == bound)) err("=");
+                break;
+            case O_GE:
+                if (!(value >= bound)) err(">=");
+                break;
+            case O_GT:
+                if (!(value > bound)) err(">");
+                break;
+            case O_NE:
+                if (!(value != bound)) err("<>");
+                break;
+            default:
+                xassert(cond != cond);
+        }
+    }
+    /* the value must be in_ all specified supersets */
+    eqno = 1;
+    for (var in_ = par.in; in_ != null; in_ = in_.next, eqno++)
+    {
+        xassert(in_.code != null);
+        xassert(in_.code.dim == 1);
+        var dummy = mpl_internal_expand_tuple(mpl, null,
+            mpl_internal_create_symbol_num(mpl, value));
+        if (!mpl_internal_is_member(mpl, in_.code, dummy))
+            mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " = " + value + " not in specified set; see (" + eqno + ")");
+    }
+}
+
+function mpl_internal_take_member_num(mpl, par, tuple){
+    /* find member in the parameter array */
+    var memb = mpl_internal_find_member(mpl, par.array, tuple);
+
+    function add(value){
+        /* check that the value satisfies to all restrictions, assign
+         it to new member, and add the member to the array */
+        mpl_internal_check_value_num(mpl, par, tuple, value);
+        memb = mpl_internal_add_member(mpl, par.array, mpl_internal_copy_tuple(mpl, tuple));
+        memb.value.num = value;
+        return value;
+    }
+
+    if (memb != null)
+    /* member exists, so just take its value */
+        return memb.value.num;
+    else if (par.assign != null)
+    /* compute value using assignment expression */
+        return add(mpl_internal_eval_numeric(mpl, par.assign));
+    else if (par.option != null)
+    /* compute default value */
+        return add(mpl_internal_eval_numeric(mpl, par.option));
+    else if (par.defval != null)
+    {   /* take default value provided in the data section */
+        if (par.defval.str != null)
+            mpl_internal_error(mpl, "cannot convert " + mpl_internal_format_symbol(mpl, par.defval) + " to floating-point number");
+        return add(par.defval.num);
+    }
+    else
+    /* no value is provided */
+        return mpl_internal_error(mpl, "no value for " + par.name + mpl_internal_format_tuple(mpl, '[', tuple));
+}
+
+function mpl_internal_eval_num_func(mpl, info){
+    /* this is auxiliary routine to work within domain scope */
+    if (info.memb != null)
+    {  /* checking call; check numeric value being assigned */
+        mpl_internal_check_value_num(mpl, info.par, info.memb.tuple,
+            info.memb.value.num);
+    }
+    else
+    {  /* normal call; evaluate member, which has given n-tuple */
+        info.value = mpl_internal_take_member_num(mpl, info.par, info.tuple);
+    }
+}
+
+function mpl_internal_eval_member_num(mpl, par, tuple){
+    /* this routine evaluates numeric parameter member */
+    var info = {};
+    xassert(par.type == A_NUMERIC || par.type == A_INTEGER ||
+        par.type == A_BINARY);
+    xassert(par.dim == mpl_internal_tuple_dimen(mpl, tuple));
+    info.par = par;
+    info.tuple = tuple;
+    if (par.data == 1)
+    {  /* check data, which are provided in the data section, but not
+     checked yet */
+        /* save pointer to the last array member; note that during the
+         check new members may be added beyond the last member due to
+         references to the same parameter from default expression as
+         well as from expressions that define restricting conditions;
+         however, values assigned to the new members will be checked
+         by other routine, so we don't need to check them here */
+        var tail = par.array.tail;
+        /* change the data status to prevent infinite recursive loop
+         due to references to the same parameter during the check */
+        par.data = 2;
+        /* check values assigned to array members in the data section
+         until the marked member has been reached */
+        for (info.memb = par.array.head; info.memb != null;
+             info.memb = info.memb.next)
+        {  if (mpl_internal_eval_within_domain(mpl, par.domain, info.memb.tuple,
+            info, mpl_internal_eval_num_func))
+            mpl_internal_out_of_domain(mpl, par.name, info.memb.tuple);
+            if (info.memb == tail) break;
+        }
+        /* the check has been finished */
+    }
+    /* evaluate member, which has given n-tuple */
+    info.memb = null;
+    if (mpl_internal_eval_within_domain(mpl, info.par.domain, info.tuple, info,
+        mpl_internal_eval_num_func))
+        mpl_internal_out_of_domain(mpl, par.name, info.tuple);
+    /* bring evaluated value to the calling program */
+    return info.value;
+}
+
+function mpl_internal_check_value_sym(mpl, par, tuple, value){
+    var in_;
+    var eqno = 1;
+    /* the value must satisfy to all specified conditions */
+    for (var cond = par.cond; cond != null; cond = cond.next,
+        eqno++)
+    {
+        var buf; // 255
+        xassert(cond.code != null);
+        var bound = mpl_internal_eval_symbolic(mpl, cond.code);
+        switch (cond.rho)
+        {
+            case O_LT:
+                if (!(mpl_internal_compare_symbols(mpl, value, bound) < 0))
+                {   buf = mpl_internal_format_symbol(mpl, bound);
+                    xassert(buf.length <= 255);
+                    mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " = " +
+                        mpl_internal_format_symbol(mpl, value) + " not < " + buf);
+                }
+                break;
+            case O_LE:
+                if (!(mpl_internal_compare_symbols(mpl, value, bound) <= 0))
+                {   buf = mpl_internal_format_symbol(mpl, bound);
+                    xassert(buf.length <= 255);
+                    mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " = " +
+                        mpl_internal_format_symbol(mpl, value) + " not <= " + buf);
+                }
+                break;
+            case O_EQ:
+                if (!(mpl_internal_compare_symbols(mpl, value, bound) == 0))
+                {   buf = mpl_internal_format_symbol(mpl, bound);
+                    xassert(buf.length <= 255);
+                    mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " = " +
+                        mpl_internal_format_symbol(mpl, value) + " not = " + buf);
+                }
+                break;
+            case O_GE:
+                if (!(mpl_internal_compare_symbols(mpl, value, bound) >= 0))
+                {   buf = mpl_internal_format_symbol(mpl, bound);
+                    xassert(buf.length <= 255);
+                    mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " = " +
+                        mpl_internal_format_symbol(mpl, value) + " not >= " + buf);
+                }
+                break;
+            case O_GT:
+                if (!(mpl_internal_compare_symbols(mpl, value, bound) > 0))
+                {   buf = mpl_internal_format_symbol(mpl, bound);
+                    xassert(buf.length <= 255);
+                    mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " = " +
+                        mpl_internal_format_symbol(mpl, value) + " not > " + buf);
+                }
+                break;
+            case O_NE:
+                if (!(mpl_internal_compare_symbols(mpl, value, bound) != 0))
+                {   buf = mpl_internal_format_symbol(mpl, bound);
+                    xassert(buf.length <= 255);
+                    mpl_internal_error(mpl, par.name + mpl_internal_format_tuple(mpl, '[', tuple) + " <> " +
+                        mpl_internal_format_symbol(mpl, value) + " not > " + buf);
+                }
+                break;
+            default:
+                xassert(cond != cond);
+        }
+    }
+    /* the value must be in all specified supersets */
+    eqno = 1;
+    for (in_ = par.in; in_ != null; in_ = in_.next, eqno++)
+    {
+        xassert(in_.code != null);
+        xassert(in_.code.dim == 1);
+        var dummy = mpl_internal_expand_tuple(mpl, null, mpl_internal_copy_symbol(mpl,
+            value));
+        if (!mpl_internal_is_member(mpl, in_.code, dummy))
+            mpl_internal_error(mpl, par.name, mpl_internal_format_tuple(mpl, '[', tuple) + " = " + mpl_internal_format_symbol(mpl, value) + " not in specified set; see (" + eqno + ")");
+    }
+}
+
+function mpl_internal_take_member_sym(mpl, par, tuple){
+    /* find member in the parameter array */
+    var memb = mpl_internal_find_member(mpl, par.array, tuple);
+
+    function add(value){
+        /* check that the value satisfies to all restrictions, assign
+         it to new member, and add the member to the array */
+        mpl_internal_check_value_sym(mpl, par, tuple, value);
+        memb = mpl_internal_add_member(mpl, par.array, mpl_internal_copy_tuple(mpl, tuple));
+        memb.value.sym = mpl_internal_copy_symbol(mpl, value);
+        return value;
+    }
+
+    if (memb != null)
+    {  /* member exists, so just take its value */
+        return mpl_internal_copy_symbol(mpl, memb.value.sym);
+    }
+    else if (par.assign != null)
+    /* compute value using assignment expression */
+        return add(mpl_internal_eval_symbolic(mpl, par.assign));
+    else if (par.option != null)
+    /* compute default value */
+        return add(mpl_internal_eval_symbolic(mpl, par.option));
+    else if (par.defval != null)
+    /* take default value provided in the data section */
+        return(mpl_internal_copy_symbol(mpl, par.defval));
+    else
+    /* no value is provided */
+        return mpl_internal_error(mpl, "no value for " + par.name + mpl_internal_format_tuple(mpl, '[', tuple));
+}
+
+function mpl_internal_eval_sym_func(mpl, info)
+{     /* this is auxiliary routine to work within domain scope */
+    if (info.memb != null)
+    {  /* checking call; check symbolic value being assigned */
+        mpl_internal_check_value_sym(mpl, info.par, info.memb.tuple,
+            info.memb.value.sym);
+    }
+    else
+    {  /* normal call; evaluate member, which has given n-tuple */
+        info.value = mpl_internal_take_member_sym(mpl, info.par, info.tuple);
+    }
+}
+
+function mpl_internal_eval_member_sym(mpl, par, tuple){
+    /* this routine evaluates symbolic parameter member */
+    var info = {};
+    xassert(par.type == A_SYMBOLIC);
+    xassert(par.dim == mpl_internal_tuple_dimen(mpl, tuple));
+    info.par = par;
+    info.tuple = tuple;
+    if (par.data == 1)
+    {  /* check data, which are provided in the data section, but not
+     checked yet */
+        /* save pointer to the last array member; note that during the
+         check new members may be added beyond the last member due to
+         references to the same parameter from default expression as
+         well as from expressions that define restricting conditions;
+         however, values assigned to the new members will be checked
+         by other routine, so we don't need to check them here */
+        var tail = par.array.tail;
+        /* change the data status to prevent infinite recursive loop
+         due to references to the same parameter during the check */
+        par.data = 2;
+        /* check values assigned to array members in the data section
+         until the marked member has been reached */
+        for (info.memb = par.array.head; info.memb != null;
+             info.memb = info.memb.next)
+        {  if (mpl_internal_eval_within_domain(mpl, par.domain, info.memb.tuple,
+            info, mpl_internal_eval_sym_func))
+            mpl_internal_out_of_domain(mpl, par.name, info.memb.tuple);
+            if (info.memb == tail) break;
+        }
+        /* the check has been finished */
+    }
+    /* evaluate member, which has given n-tuple */
+    info.memb = null;
+    if (mpl_internal_eval_within_domain(mpl, info.par.domain, info.tuple, info,
+        mpl_internal_eval_sym_func))
+        mpl_internal_out_of_domain(mpl, par.name, info.tuple);
+    /* bring evaluated value to the calling program */
+    return info.value;
+}
+
+function mpl_internal_whole_par_func(mpl, par){
+    /* this is auxiliary routine to work within domain scope */
+    var tuple = mpl_internal_get_domain_tuple(mpl, par.domain);
+    switch (par.type)
+    {   case A_NUMERIC:
+        case A_INTEGER:
+        case A_BINARY:
+            mpl_internal_eval_member_num(mpl, par, tuple);
+            break;
+        case A_SYMBOLIC:
+            mpl_internal_eval_member_sym(mpl, par, tuple);
+            break;
+        default:
+            xassert(par != par);
+    }
+    return 0;
+}
+
+function mpl_internal_eval_whole_par(mpl, par){
+    mpl_internal_loop_within_domain(mpl, par.domain, par, mpl_internal_whole_par_func);
+}
+
+function mpl_internal_clean_parameter(mpl, par){
+    var cond;
+    var in_;
+    var memb;
+    /* clean subscript domain */
+    mpl_internal_clean_domain(mpl, par.domain);
+    /* clean pseudo-code for computing restricting conditions */
+    for (cond = par.cond; cond != null; cond = cond.next)
+        mpl_internal_clean_code(mpl, cond.code);
+    /* clean pseudo-code for computing restricting supersets */
+    for (in_ = par.in; in_ != null; in_ = in_.next)
+        mpl_internal_clean_code(mpl, in_.code);
+    /* clean pseudo-code for computing assigned value */
+    mpl_internal_clean_code(mpl, par.assign);
+    /* clean pseudo-code for computing default value */
+    mpl_internal_clean_code(mpl, par.option);
+    /* reset data status flag */
+    par.data = 0;
+    /* delete default symbolic value */
+    par.defval = null;
+    /* delete content array */
+    for (memb = par.array.head; memb != null; memb = memb.next)
+        mpl_internal_delete_value(mpl, par.array.type, memb.value);
+    par.array = null;
+}
+
+/**********************************************************************/
+/* * *                      MODEL VARIABLES                       * * */
+/**********************************************************************/
+
+function mpl_internal_take_member_var(mpl, var_, tuple){
+    var refer;
+    /* find member in the variable array */
+    var memb = mpl_internal_find_member(mpl, var_.array, tuple);
+    if (memb != null)
+    {  /* member exists, so just take the reference */
+        refer = memb.value.var;
+    }
+    else
+    {  /* member is referenced for the first time and therefore does
+     not exist; create new elemental variable, assign it to new
+     member, and add the member to the variable array */
+        memb = mpl_internal_add_member(mpl, var_.array, mpl_internal_copy_tuple(mpl, tuple));
+        refer = memb.value.var = {};
+        refer.j = 0;
+        refer.var = var_;
+        refer.memb = memb;
+        /* compute lower bound */
+        if (var_.lbnd == null)
+            refer.lbnd = 0.0;
+        else
+            refer.lbnd = mpl_internal_eval_numeric(mpl, var_.lbnd);
+        /* compute upper bound */
+        if (var_.ubnd == null)
+            refer.ubnd = 0.0;
+        else if (var_.ubnd == var_.lbnd)
+            refer.ubnd = refer.lbnd;
+        else
+            refer.ubnd = mpl_internal_eval_numeric(mpl, var_.ubnd);
+        /* nullify working quantity */
+        refer.temp = 0.0;
+        /* solution has not been obtained by the solver yet */
+        refer.stat = 0;
+        refer.prim = refer.dual = 0.0;
+    }
+    return refer;
+}
+
+function mpl_internal_eval_var_func(mpl, info)
+{
+    /* this is auxiliary routine to work within domain scope */
+    info.refer = mpl_internal_take_member_var(mpl, info.var, info.tuple);
+}
+
+function mpl_internal_eval_member_var(mpl, var_, tuple){
+    /* this routine evaluates variable member */
+    var info = {};
+    xassert(var_.dim == mpl_internal_tuple_dimen(mpl, tuple));
+    info.var = var_;
+    info.tuple = tuple;
+    /* evaluate member, which has given n-tuple */
+    if (mpl_internal_eval_within_domain(mpl, info.var.domain, info.tuple, info, mpl_internal_eval_var_func))
+        mpl_internal_out_of_domain(mpl, var_.name, info.tuple);
+    /* bring evaluated reference to the calling program */
+    return info.refer;
+}
+
+function mpl_internal_whole_var_func(mpl, var_){
+    /* this is auxiliary routine to work within domain scope */
+    var tuple = mpl_internal_get_domain_tuple(mpl, var_.domain);
+    mpl_internal_eval_member_var(mpl, var_, tuple);
+    return 0;
+}
+
+function mpl_internal_eval_whole_var(mpl, var_){
+    mpl_internal_loop_within_domain(mpl, var_.domain, var_, mpl_internal_whole_var_func);
+}
+
+function mpl_internal_clean_variable(mpl, var_){
+    var memb;
+    /* clean subscript domain */
+    mpl_internal_clean_domain(mpl, var_.domain);
+    /* clean code for computing lower bound */
+    mpl_internal_clean_code(mpl, var_.lbnd);
+    /* clean code for computing upper bound */
+    if (var_.ubnd != var_.lbnd) mpl_internal_clean_code(mpl, var_.ubnd);
+    /* delete content array */
+    var_.array = null;
+}
+
+/**********************************************************************/
+/* * *              MODEL CONSTRAINTS AND OBJECTIVES              * * */
+/**********************************************************************/
+
+function mpl_internal_take_member_con(mpl, con, tuple){
+    var refer, temp = null;
+    /* find member in the constraint array */
+    var memb = mpl_internal_find_member(mpl, con.array, tuple);
+    if (memb != null)
+    {  /* member exists, so just take the reference */
+        refer = memb.value.con;
+    }
+    else
+    {  /* member is referenced for the first time and therefore does
+     not exist; create new elemental constraint, assign it to new
+     member, and add the member to the constraint array */
+        memb = mpl_internal_add_member(mpl, con.array, mpl_internal_copy_tuple(mpl, tuple));
+        refer = memb.value.con = {};
+        refer.i = 0;
+        refer.con = con;
+        refer.memb = memb;
+        /* compute linear form */
+        xassert(con.code != null);
+        refer.form = mpl_internal_eval_formula(mpl, con.code);
+        /* compute lower and upper bounds */
+        if (con.lbnd == null && con.ubnd == null)
+        {  /* objective has no bounds */
+
+            xassert(con.type == A_MINIMIZE || con.type == A_MAXIMIZE);
+            /* carry the constant term to the right-hand side */
+            refer.form = mpl_internal_remove_constant(mpl, refer.form, function(v){temp = v});
+            refer.lbnd = refer.ubnd = - temp;
+        }
+        else if (con.lbnd != null && con.ubnd == null)
+        {  /* constraint a * x + b >= c * y + d is transformed to the
+         standard form a * x - c * y >= d - b */
+
+            xassert(con.type == A_CONSTRAINT);
+            refer.form = mpl_internal_linear_comb(mpl,
+                +1.0, refer.form,
+                -1.0, mpl_internal_eval_formula(mpl, con.lbnd));
+            refer.form = mpl_internal_remove_constant(mpl, refer.form, function(v){temp = v});
+            refer.lbnd = - temp;
+            refer.ubnd = 0.0;
+        }
+        else if (con.lbnd == null && con.ubnd != null)
+        {  /* constraint a * x + b <= c * y + d is transformed to the
+         standard form a * x - c * y <= d - b */
+
+            xassert(con.type == A_CONSTRAINT);
+            refer.form = mpl_internal_linear_comb(mpl,
+                +1.0, refer.form,
+                -1.0, mpl_internal_eval_formula(mpl, con.ubnd));
+            refer.form = mpl_internal_remove_constant(mpl, refer.form, function(v){temp = v});
+            refer.lbnd = 0.0;
+            refer.ubnd = - temp;
+        }
+        else if (con.lbnd == con.ubnd)
+        {  /* constraint a * x + b = c * y + d is transformed to the
+         standard form a * x - c * y = d - b */
+
+            xassert(con.type == A_CONSTRAINT);
+            refer.form = mpl_internal_linear_comb(mpl,
+                +1.0, refer.form,
+                -1.0, mpl_internal_eval_formula(mpl, con.lbnd));
+            refer.form = mpl_internal_remove_constant(mpl, refer.form, function(v){temp = v});
+            refer.lbnd = refer.ubnd = - temp;
+        }
+        else
+        {  /* ranged constraint c <= a * x + b <= d is transformed to
+         the standard form c - b <= a * x <= d - b */
+            var temp1 = null, temp2 = null;
+            xassert(con.type == A_CONSTRAINT);
+            refer.form = mpl_internal_remove_constant(mpl, refer.form, function(v){temp = v});
+            xassert(mpl_internal_remove_constant(mpl, mpl_internal_eval_formula(mpl, con.lbnd), function(v){temp1 = v}) == null);
+            xassert(mpl_internal_remove_constant(mpl, mpl_internal_eval_formula(mpl, con.ubnd), function(v){temp2 = v}) == null);
+            refer.lbnd = mpl_internal_fp_sub(mpl, temp1, temp);
+            refer.ubnd = mpl_internal_fp_sub(mpl, temp2, temp);
+        }
+        /* solution has not been obtained by the solver yet */
+        refer.stat = 0;
+        refer.prim = refer.dual = 0.0;
+    }
+    return refer;
+}
+
+function mpl_internal_eval_con_func(mpl, info)
+{     /* this is auxiliary routine to work within domain scope */
+    info.refer = mpl_internal_take_member_con(mpl, info.con, info.tuple);
+}
+
+function mpl_internal_eval_member_con(mpl, con, tuple){
+    /* this routine evaluates constraint member */
+    var info = {};
+    xassert(con.dim == mpl_internal_tuple_dimen(mpl, tuple));
+    info.con = con;
+    info.tuple = tuple;
+    /* evaluate member, which has given n-tuple */
+    if (mpl_internal_eval_within_domain(mpl, info.con.domain, info.tuple, info,
+        mpl_internal_eval_con_func))
+        mpl_internal_out_of_domain(mpl, con.name, info.tuple);
+    /* bring evaluated reference to the calling program */
+    return info.refer;
+}
+
+function mpl_internal_whole_con_func(mpl, con){
+    /* this is auxiliary routine to work within domain scope */
+    var tuple = mpl_internal_get_domain_tuple(mpl, con.domain);
+    mpl_internal_eval_member_con(mpl, con, tuple);
+    return 0;
+}
+
+function mpl_internal_eval_whole_con(mpl, con){
+    mpl_internal_loop_within_domain(mpl, con.domain, con, mpl_internal_whole_con_func);
+}
+
+function mpl_internal_clean_constraint(mpl, con){
+    /* clean subscript domain */
+    mpl_internal_clean_domain(mpl, con.domain);
+    /* clean code for computing main linear form */
+    mpl_internal_clean_code(mpl, con.code);
+    /* clean code for computing lower bound */
+    mpl_internal_clean_code(mpl, con.lbnd);
+    /* clean code for computing upper bound */
+    if (con.ubnd != con.lbnd) mpl_internal_clean_code(mpl, con.ubnd);
+    /* delete content array */
+    con.array = null;
+}
+
+/**********************************************************************/
+/* * *                        PSEUDO-CODE                         * * */
+/**********************************************************************/
+
+function mpl_internal_iter_num_func(mpl, info){
+    /* this is auxiliary routine used to perform iterated operation
+     on numeric "integrand" within domain scope */
+    var temp = mpl_internal_eval_numeric(mpl, info.code.arg.loop.x);
+    switch (info.code.op)
+    {  case O_SUM:
+        /* summation over domain */
+        info.value = mpl_internal_fp_add(mpl, info.value, temp);
+        break;
+        case O_PROD:
+            /* multiplication over domain */
+            info.value = mpl_internal_fp_mul(mpl, info.value, temp);
+            break;
+        case O_MINIMUM:
+            /* minimum over domain */
+            if (info.value > temp) info.value = temp;
+            break;
+        case O_MAXIMUM:
+            /* maximum over domain */
+            if (info.value < temp) info.value = temp;
+            break;
+        default:
+            xassert(info != info);
+    }
+    return 0;
+}
+
+function mpl_internal_eval_numeric(mpl, code){
+    var value, tuple, e, sym, str, temp, info;
+    xassert(code != null);
+    xassert(code.type == A_NUMERIC);
+    xassert(code.dim == 0);
+    /* if the operation has a side effect, invalidate and delete the
+     resultant value */
+    if (code.vflag && code.valid)
+    {  code.valid = 0;
+        mpl_internal_delete_value(mpl, code.type, code.value);
+    }
+    /* if resultant value is valid, no evaluation is needed */
+    if (code.valid)
+    {  return code.value.num;
+    }
+    /* evaluate pseudo-code recursively */
+    switch (code.op)
+    {  case O_NUMBER:
+        /* take floating-point number */
+        value = code.arg.num;
+        break;
+        case O_MEMNUM:
+            /* take member of numeric parameter */
+        {
+            tuple = null;
+            for (e = code.arg.par.list; e != null; e = e.next)
+                tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_eval_symbolic(mpl,
+                    e.x));
+            value = mpl_internal_eval_member_num(mpl, code.arg.par.par, tuple);
+        }
+            break;
+        case O_MEMVAR:
+            /* take computed value of elemental variable */
+        {
+            var var_;
+            tuple = null;
+            for (e = code.arg.var.list; e != null; e = e.next)
+                tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_eval_symbolic(mpl,
+                    e.x));
+            var_ = mpl_internal_eval_member_var(mpl, code.arg.var.var, tuple);
+            switch (code.arg.var.suff)
+            {  case DOT_LB:
+                if (var_.var.lbnd == null)
+                    value = -DBL_MAX;
+                else
+                    value = var_.lbnd;
+                break;
+                case DOT_UB:
+                    if (var_.var.ubnd == null)
+                        value = +DBL_MAX;
+                    else
+                        value = var_.ubnd;
+                    break;
+                case DOT_STATUS:
+                    value = var_.stat;
+                    break;
+                case DOT_VAL:
+                    value = var_.prim;
+                    break;
+                case DOT_DUAL:
+                    value = var_.dual;
+                    break;
+                default:
+                    xassert(code != code);
+            }
+        }
+            break;
+        case O_MEMCON:
+            /* take computed value of elemental constraint */
+        {
+            var con;
+            tuple = null;
+            for (e = code.arg.con.list; e != null; e = e.next)
+                tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_eval_symbolic(mpl,
+                    e.x));
+            con = mpl_internal_eval_member_con(mpl, code.arg.con.con, tuple);
+            switch (code.arg.con.suff)
+            {  case DOT_LB:
+                if (con.con.lbnd == null)
+                    value = -DBL_MAX;
+                else
+                    value = con.lbnd;
+                break;
+                case DOT_UB:
+                    if (con.con.ubnd == null)
+                        value = +DBL_MAX;
+                    else
+                        value = con.ubnd;
+                    break;
+                case DOT_STATUS:
+                    value = con.stat;
+                    break;
+                case DOT_VAL:
+                    value = con.prim;
+                    break;
+                case DOT_DUAL:
+                    value = con.dual;
+                    break;
+                default:
+                    xassert(code != code);
+            }
+        }
+            break;
+        case O_IRAND224:
+            /* pseudo-random in [0, 2^24-1] */
+            value = mpl_internal_fp_irand224(mpl);
+            break;
+        case O_UNIFORM01:
+            /* pseudo-random in [0, 1) */
+            value = mpl_internal_fp_uniform01(mpl);
+            break;
+        case O_NORMAL01:
+            /* gaussian random, mu = 0, sigma = 1 */
+            value = mpl_internal_fp_normal01(mpl);
+            break;
+        case O_GMTIME:
+            /* current calendar time */
+            value = mpl_internal_fn_gmtime(mpl);
+            break;
+        case O_CVTNUM:
+            /* conversion to numeric */
+        {
+            sym = mpl_internal_eval_symbolic(mpl, code.arg.arg.x);
+            if (sym.str == null)
+                value = sym.num;
+            else
+            {  if (str2num(sym.str, function(v){value= v}))
+                mpl_internal_error(mpl, "cannot convert " + mpl_internal_format_symbol(mpl, sym) + " to floating-point number");
+            }
+        }
+            break;
+        case O_PLUS:
+            /* unary plus */
+            value = + mpl_internal_eval_numeric(mpl, code.arg.arg.x);
+            break;
+        case O_MINUS:
+            /* unary minus */
+            value = - mpl_internal_eval_numeric(mpl, code.arg.arg.x);
+            break;
+        case O_ABS:
+            /* absolute value */
+            value = Math.abs(mpl_internal_eval_numeric(mpl, code.arg.arg.x));
+            break;
+        case O_CEIL:
+            /* round upward ("ceiling of x") */
+            value = Math.ceil(mpl_internal_eval_numeric(mpl, code.arg.arg.x));
+            break;
+        case O_FLOOR:
+            /* round downward ("floor of x") */
+            value = Math.floor(mpl_internal_eval_numeric(mpl, code.arg.arg.x));
+            break;
+        case O_EXP:
+            /* base-e exponential */
+            value = mpl_internal_fp_exp(mpl, mpl_internal_eval_numeric(mpl, code.arg.arg.x));
+            break;
+        case O_LOG:
+            /* natural logarithm */
+            value = mpl_internal_fp_log(mpl, mpl_internal_eval_numeric(mpl, code.arg.arg.x));
+            break;
+        case O_LOG10:
+            /* common (decimal) logarithm */
+            value = mpl_internal_fp_log10(mpl, mpl_internal_eval_numeric(mpl, code.arg.arg.x));
+            break;
+        case O_SQRT:
+            /* square root */
+            value = mpl_internal_fp_sqrt(mpl, mpl_internal_eval_numeric(mpl, code.arg.arg.x));
+            break;
+        case O_SIN:
+            /* trigonometric sine */
+            value = mpl_internal_fp_sin(mpl, mpl_internal_eval_numeric(mpl, code.arg.arg.x));
+            break;
+        case O_COS:
+            /* trigonometric cosine */
+            value = mpl_internal_fp_cos(mpl, mpl_internal_eval_numeric(mpl, code.arg.arg.x));
+            break;
+        case O_ATAN:
+            /* trigonometric arctangent (one argument) */
+            value = mpl_internal_fp_atan(mpl, mpl_internal_eval_numeric(mpl, code.arg.arg.x));
+            break;
+        case O_ATAN2:
+            /* trigonometric arctangent (two arguments) */
+            value = mpl_internal_fp_atan2(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_ROUND:
+            /* round to nearest integer */
+            value = mpl_internal_fp_round(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x), 0.0);
+            break;
+        case O_ROUND2:
+            /* round to n fractional digits */
+            value = mpl_internal_fp_round(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_TRUNC:
+            /* truncate to nearest integer */
+            value = mpl_internal_fp_trunc(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x), 0.0);
+            break;
+        case O_TRUNC2:
+            /* truncate to n fractional digits */
+            value = mpl_internal_fp_trunc(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_ADD:
+            /* addition */
+            value = mpl_internal_fp_add(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_SUB:
+            /* subtraction */
+            value = mpl_internal_fp_sub(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_LESS:
+            /* non-negative subtraction */
+            value = mpl_internal_fp_less(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_MUL:
+            /* multiplication */
+            value = mpl_internal_fp_mul(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_DIV:
+            /* division */
+            value = mpl_internal_fp_div(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_IDIV:
+            /* quotient of exact division */
+            value = mpl_internal_fp_idiv(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_MOD:
+            /* remainder of exact division */
+            value = mpl_internal_fp_mod(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_POWER:
+            /* exponentiation (raise to power) */
+            value = mpl_internal_fp_power(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_UNIFORM:
+            /* pseudo-random in [a, b) */
+            value = mpl_internal_fp_uniform(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_NORMAL:
+            /* gaussian random, given mu and sigma */
+            value = mpl_internal_fp_normal(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            break;
+        case O_CARD:
+        {
+            var set = mpl_internal_eval_elemset(mpl, code.arg.arg.x);
+            value = set.size;
+        }
+            break;
+        case O_LENGTH:
+        {
+            sym = mpl_internal_eval_symbolic(mpl, code.arg.arg.x);
+            if (sym.str == null)
+                str = String(sym.num);
+            else
+                str = sym.str;
+            value = str.length;
+        }
+            break;
+        case O_STR2TIME:
+        {
+            var fmt;
+            sym = mpl_internal_eval_symbolic(mpl, code.arg.arg.x);
+            if (sym.str == null)
+                str = String(sym.num);
+            else
+                str = sym.str;
+            sym = mpl_internal_eval_symbolic(mpl, code.arg.arg.y);
+            if (sym.str == null)
+                fmt = String(sym.num);
+            else
+                fmt = sym.str;
+            value = mpl_internal_fn_str2time(mpl, str, fmt);
+        }
+            break;
+        case O_FORK:
+            /* if-then-else */
+            if (mpl_internal_eval_logical(mpl, code.arg.arg.x))
+                value = mpl_internal_eval_numeric(mpl, code.arg.arg.y);
+            else if (code.arg.arg.z == null)
+                value = 0.0;
+            else
+                value = mpl_internal_eval_numeric(mpl, code.arg.arg.z);
+            break;
+        case O_MIN:
+            /* minimal value (n-ary) */
+        {
+            value = +DBL_MAX;
+            for (e = code.arg.list; e != null; e = e.next)
+            {  temp = mpl_internal_eval_numeric(mpl, e.x);
+                if (value > temp) value = temp;
+            }
+        }
+            break;
+        case O_MAX:
+            /* maximal value (n-ary) */
+        {
+            value = -DBL_MAX;
+            for (e = code.arg.list; e != null; e = e.next)
+            {  temp = mpl_internal_eval_numeric(mpl, e.x);
+                if (value < temp) value = temp;
+            }
+        }
+            break;
+        case O_SUM:
+            /* summation over domain */
+        {   info = {};
+            info.code = code;
+            info.value = 0.0;
+            mpl_internal_loop_within_domain(mpl, code.arg.loop.domain, info,
+                mpl_internal_iter_num_func);
+            value = info.value;
+        }
+            break;
+        case O_PROD:
+            /* multiplication over domain */
+        {   info = {};
+            info.code = code;
+            info.value = 1.0;
+            mpl_internal_loop_within_domain(mpl, code.arg.loop.domain, info,
+                mpl_internal_iter_num_func);
+            value = info.value;
+        }
+            break;
+        case O_MINIMUM:
+            /* minimum over domain */
+        {   info = {};
+            info.code = code;
+            info.value = +DBL_MAX;
+            mpl_internal_loop_within_domain(mpl, code.arg.loop.domain, info,
+                mpl_internal_iter_num_func);
+            if (info.value == +DBL_MAX)
+                mpl_internal_error(mpl, "min{} over empty set; result undefined");
+            value = info.value;
+        }
+            break;
+        case O_MAXIMUM:
+            /* maximum over domain */
+        {   info = {};
+            info.code = code;
+            info.value = -DBL_MAX;
+            mpl_internal_loop_within_domain(mpl, code.arg.loop.domain, info,
+                mpl_internal_iter_num_func);
+            if (info.value == -DBL_MAX)
+                mpl_internal_error(mpl, "max{} over empty set; result undefined");
+            value = info.value;
+        }
+            break;
+        default:
+            xassert(code != code);
+    }
+    /* save resultant value */
+    xassert(!code.valid);
+    code.valid = 1;
+    code.value.num = value;
+    return value;
+}
+
+function mpl_internal_eval_symbolic(mpl, code){
+    var value, str;
+    xassert(code != null);
+    xassert(code.type == A_SYMBOLIC);
+    xassert(code.dim == 0);
+    /* if the operation has a side effect, invalidate and delete the
+     resultant value */
+    if (code.vflag && code.valid)
+    {  code.valid = 0;
+        mpl_internal_delete_value(mpl, code.type, code.value);
+    }
+    /* if resultant value is valid, no evaluation is needed */
+    if (code.valid)
+    {  return mpl_internal_copy_symbol(mpl, code.value.sym);
+    }
+    /* evaluate pseudo-code recursively */
+    switch (code.op)
+    {  case O_STRING:
+        /* take character string */
+        value = mpl_internal_create_symbol_str(mpl, code.arg.str);
+        break;
+        case O_INDEX:
+            /* take dummy index */
+            xassert(code.arg.index.slot.value != null);
+            value = mpl_internal_copy_symbol(mpl, code.arg.index.slot.value);
+            break;
+        case O_MEMSYM:
+            /* take member of symbolic parameter */
+        {   var tuple;
+            var e;
+            tuple = null;
+            for (e = code.arg.par.list; e != null; e = e.next)
+                tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_eval_symbolic(mpl,
+                    e.x));
+            value = mpl_internal_eval_member_sym(mpl, code.arg.par.par, tuple);
+        }
+            break;
+        case O_CVTSYM:
+            /* conversion to symbolic */
+            value = mpl_internal_create_symbol_num(mpl, mpl_internal_eval_numeric(mpl,
+                code.arg.arg.x));
+            break;
+        case O_CONCAT:
+            /* concatenation */
+            value = mpl_internal_concat_symbols(mpl,
+                mpl_internal_eval_symbolic(mpl, code.arg.arg.x),
+                mpl_internal_eval_symbolic(mpl, code.arg.arg.y));
+            break;
+        case O_FORK:
+            /* if-then-else */
+            if (mpl_internal_eval_logical(mpl, code.arg.arg.x))
+                value = mpl_internal_eval_symbolic(mpl, code.arg.arg.y);
+            else if (code.arg.arg.z == null)
+                value = mpl_internal_create_symbol_num(mpl, 0.0);
+            else
+                value = mpl_internal_eval_symbolic(mpl, code.arg.arg.z);
+            break;
+        case O_SUBSTR:
+        case O_SUBSTR3:
+        {  var pos, len;
+            value = mpl_internal_eval_symbolic(mpl, code.arg.arg.x);
+            if (value.str == null)
+                str = String(value.num);
+            else
+                str = value.str;
+            if (code.op == O_SUBSTR)
+            {  pos = mpl_internal_eval_numeric(mpl, code.arg.arg.y);
+                if (pos != Math.floor(pos))
+                    mpl_internal_error(mpl, "substr('...', " + pos + "); non-integer second argument");
+                if (pos < 1 || pos > str.length + 1)
+                    mpl_internal_error(mpl, "substr('...', " + pos + "); substring out of range");
+            }
+            else
+            {   pos = mpl_internal_eval_numeric(mpl, code.arg.arg.y);
+                len = mpl_internal_eval_numeric(mpl, code.arg.arg.z);
+                if (pos != Math.floor(pos) || len != Math.floor(len))
+                    mpl_internal_error(mpl, "substr('...', " + pos + ", " + len + "); non-integer second and/or third argument");
+                if (pos < 1 || len < 0 || pos + len > str.length + 1)
+                    mpl_internal_error(mpl, "substr('...', " + pos + ", " + len + "); substring out of range");
+                //str[pos + len - 1] = '\0';
+            }
+            value = mpl_internal_create_symbol_str(mpl, str.slice(pos-1, pos+len-1));
+        }
+            break;
+        case O_TIME2STR:
+        {   var num;
+            var sym;
+            var fmt; //[MAX_LENGTH+1], fmt[MAX_LENGTH+1];
+            num = mpl_internal_eval_numeric(mpl, code.arg.arg.x);
+            sym = mpl_internal_eval_symbolic(mpl, code.arg.arg.y);
+            if (sym.str == null)
+                fmt = String(sym.num);
+            else
+                fmt = sym.str;
+            str = mpl_internal_fn_time2str(mpl, num, fmt);
+            value = mpl_internal_create_symbol_str(mpl, str);
+        }
+            break;
+        default:
+            xassert(code != code);
+    }
+    /* save resultant value */
+    xassert(!code.valid);
+    code.valid = 1;
+    code.value.sym = mpl_internal_copy_symbol(mpl, value);
+    return value;
+}
+
+function mpl_internal_iter_log_func(mpl, info){
+    /* this is auxiliary routine used to perform iterated operation
+     on logical "integrand" within domain scope */
+    var ret = 0;
+    switch (info.code.op)
+    {  case O_FORALL:
+        /* conjunction over domain */
+        info.value &= mpl_internal_eval_logical(mpl, info.code.arg.loop.x);
+        if (!info.value) ret = 1;
+        break;
+        case O_EXISTS:
+            /* disjunction over domain */
+            info.value |= mpl_internal_eval_logical(mpl, info.code.arg.loop.x);
+            if (info.value) ret = 1;
+            break;
+        default:
+            xassert(info != info);
+    }
+    return ret;
+}
+
+function mpl_internal_eval_logical(mpl, code){
+    var value, sym1, sym2, tuple, set, memb, info;
+    xassert(code.type == A_LOGICAL);
+    xassert(code.dim == 0);
+    /* if the operation has a side effect, invalidate and delete the
+     resultant value */
+    if (code.vflag && code.valid)
+    {  code.valid = 0;
+        mpl_internal_delete_value(mpl, code.type, code.value);
+    }
+    /* if resultant value is valid, no evaluation is needed */
+    if (code.valid)
+    {  return code.value.bit;
+    }
+    /* evaluate pseudo-code recursively */
+    switch (code.op)
+    {  case O_CVTLOG:
+        /* conversion to logical */
+        value = (mpl_internal_eval_numeric(mpl, code.arg.arg.x) != 0.0);
+        break;
+        case O_NOT:
+            /* negation (logical "not") */
+            value = !mpl_internal_eval_logical(mpl, code.arg.arg.x);
+            break;
+        case O_LT:
+            /* comparison on 'less than' */
+            xassert(code.arg.arg.x != null);
+            if (code.arg.arg.x.type == A_NUMERIC)
+                value = (mpl_internal_eval_numeric(mpl, code.arg.arg.x) <
+                    mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            else
+            {   sym1 = mpl_internal_eval_symbolic(mpl, code.arg.arg.x);
+                sym2 = mpl_internal_eval_symbolic(mpl, code.arg.arg.y);
+                value = (mpl_internal_compare_symbols(mpl, sym1, sym2) < 0);
+            }
+            break;
+        case O_LE:
+            /* comparison on 'not greater than' */
+            xassert(code.arg.arg.x != null);
+            if (code.arg.arg.x.type == A_NUMERIC)
+                value = (mpl_internal_eval_numeric(mpl, code.arg.arg.x) <=
+                    mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            else
+            {   sym1 = mpl_internal_eval_symbolic(mpl, code.arg.arg.x);
+                sym2 = mpl_internal_eval_symbolic(mpl, code.arg.arg.y);
+                value = (mpl_internal_compare_symbols(mpl, sym1, sym2) <= 0);
+            }
+            break;
+        case O_EQ:
+            /* comparison on 'equal to' */
+            xassert(code.arg.arg.x != null);
+            if (code.arg.arg.x.type == A_NUMERIC)
+                value = (mpl_internal_eval_numeric(mpl, code.arg.arg.x) ==
+                    mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            else
+            {   sym1 = mpl_internal_eval_symbolic(mpl, code.arg.arg.x);
+                sym2 = mpl_internal_eval_symbolic(mpl, code.arg.arg.y);
+                value = (mpl_internal_compare_symbols(mpl, sym1, sym2) == 0);
+            }
+            break;
+        case O_GE:
+            /* comparison on 'not less than' */
+            xassert(code.arg.arg.x != null);
+            if (code.arg.arg.x.type == A_NUMERIC)
+                value = (mpl_internal_eval_numeric(mpl, code.arg.arg.x) >=
+                    mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            else
+            {   sym1 = mpl_internal_eval_symbolic(mpl, code.arg.arg.x);
+                sym2 = mpl_internal_eval_symbolic(mpl, code.arg.arg.y);
+                value = (mpl_internal_compare_symbols(mpl, sym1, sym2) >= 0);
+            }
+            break;
+        case O_GT:
+            /* comparison on 'greater than' */
+            xassert(code.arg.arg.x != null);
+            if (code.arg.arg.x.type == A_NUMERIC)
+                value = (mpl_internal_eval_numeric(mpl, code.arg.arg.x) >
+                    mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            else
+            {   sym1 = mpl_internal_eval_symbolic(mpl, code.arg.arg.x);
+                sym2 = mpl_internal_eval_symbolic(mpl, code.arg.arg.y);
+                value = (mpl_internal_compare_symbols(mpl, sym1, sym2) > 0);
+            }
+            break;
+        case O_NE:
+            /* comparison on 'not equal to' */
+            xassert(code.arg.arg.x != null);
+            if (code.arg.arg.x.type == A_NUMERIC)
+                value = (mpl_internal_eval_numeric(mpl, code.arg.arg.x) !=
+                    mpl_internal_eval_numeric(mpl, code.arg.arg.y));
+            else
+            {   sym1 = mpl_internal_eval_symbolic(mpl, code.arg.arg.x);
+                sym2 = mpl_internal_eval_symbolic(mpl, code.arg.arg.y);
+                value = (mpl_internal_compare_symbols(mpl, sym1, sym2) != 0);
+            }
+            break;
+        case O_AND:
+            /* conjunction (logical "and") */
+            value = mpl_internal_eval_logical(mpl, code.arg.arg.x) &&
+                mpl_internal_eval_logical(mpl, code.arg.arg.y);
+            break;
+        case O_OR:
+            /* disjunction (logical "or") */
+            value = mpl_internal_eval_logical(mpl, code.arg.arg.x) ||
+                mpl_internal_eval_logical(mpl, code.arg.arg.y);
+            break;
+        case O_IN:
+            /* test on 'x in Y' */
+        {
+            tuple = mpl_internal_eval_tuple(mpl, code.arg.arg.x);
+            value = mpl_internal_is_member(mpl, code.arg.arg.y, tuple);
+        }
+            break;
+        case O_NOTIN:
+            /* test on 'x not in Y' */
+        {
+            tuple = mpl_internal_eval_tuple(mpl, code.arg.arg.x);
+            value = !mpl_internal_is_member(mpl, code.arg.arg.y, tuple);
+        }
+            break;
+        case O_WITHIN:
+            /* test on 'X within Y' */
+        {
+            set = mpl_internal_eval_elemset(mpl, code.arg.arg.x);
+            value = 1;
+            for (memb = set.head; memb != null; memb = memb.next)
+            {  if (!mpl_internal_is_member(mpl, code.arg.arg.y, memb.tuple))
+            {  value = 0;
+                break;
+            }
+            }
+        }
+            break;
+        case O_NOTWITHIN:
+            /* test on 'X not within Y' */
+        {
+            set = mpl_internal_eval_elemset(mpl, code.arg.arg.x);
+            value = 1;
+            for (memb = set.head; memb != null; memb = memb.next)
+            {  if (mpl_internal_is_member(mpl, code.arg.arg.y, memb.tuple))
+            {  value = 0;
+                break;
+            }
+            }
+        }
+            break;
+        case O_FORALL:
+            /* conjunction (A-quantification) */
+        {   info = {};
+            info.code = code;
+            info.value = 1;
+            mpl_internal_loop_within_domain(mpl, code.arg.loop.domain, info,
+                mpl_internal_iter_log_func);
+            value = info.value;
+        }
+            break;
+        case O_EXISTS:
+            /* disjunction (E-quantification) */
+        {   info = {};
+            info.code = code;
+            info.value = 0;
+            mpl_internal_loop_within_domain(mpl, code.arg.loop.domain, info,
+                mpl_internal_iter_log_func);
+            value = info.value;
+        }
+            break;
+        default:
+            xassert(code != code);
+    }
+    /* save resultant value */
+    xassert(!code.valid);
+    code.valid = 1;
+    code.value.bit = value;
+    return value;
+}
+
+function mpl_internal_eval_tuple(mpl, code){
+    var value;
+    xassert(code != null);
+    xassert(code.type == A_TUPLE);
+    xassert(code.dim > 0);
+    /* if the operation has a side effect, invalidate and delete the
+     resultant value */
+    if (code.vflag && code.valid)
+    {  code.valid = 0;
+        mpl_internal_delete_value(mpl, code.type, code.value);
+    }
+    /* if resultant value is valid, no evaluation is needed */
+    if (code.valid)
+    {  return mpl_internal_copy_tuple(mpl, code.value.tuple);
+    }
+    /* evaluate pseudo-code recursively */
+    switch (code.op)
+    {  case O_TUPLE:
+        /* make n-tuple */
+    {
+        value = null;
+        for (var e = code.arg.list; e != null; e = e.next)
+            value = mpl_internal_expand_tuple(mpl, value, mpl_internal_eval_symbolic(mpl,
+                e.x));
+    }
+        break;
+        case O_CVTTUP:
+            /* convert to 1-tuple */
+            value = mpl_internal_expand_tuple(mpl, null,
+                mpl_internal_eval_symbolic(mpl, code.arg.arg.x));
+            break;
+        default:
+            xassert(code != code);
+    }
+    /* save resultant value */
+    xassert(!code.valid);
+    code.valid = 1;
+    code.value.tuple = mpl_internal_copy_tuple(mpl, value);
+    return value;
+}
+
+function mpl_internal_iter_set_func(mpl, info)
+{     /* this is auxiliary routine used to perform iterated operation
+ on n-tuple "integrand" within domain scope */
+    var tuple;
+    switch (info.code.op)
+    {  case O_SETOF:
+        /* compute next n-tuple and add it to the set; in this case
+         duplicate n-tuples are silently ignored */
+        tuple = mpl_internal_eval_tuple(mpl, info.code.arg.loop.x);
+        if (mpl_internal_find_tuple(mpl, info.value, tuple) == null)
+            mpl_internal_add_tuple(mpl, info.value, tuple);
+        break;
+        case O_BUILD:
+            /* construct next n-tuple using current values assigned to
+             *free* dummy indices as its components and add it to the
+             set; in this case duplicate n-tuples cannot appear */
+            mpl_internal_add_tuple(mpl, info.value, mpl_internal_get_domain_tuple(mpl,
+                info.code.arg.loop.domain));
+            break;
+        default:
+            xassert(info != info);
+    }
+    return 0;
+}
+
+function mpl_internal_eval_elemset(mpl, code){
+    var value, e, info;
+    xassert(code != null);
+    xassert(code.type == A_ELEMSET);
+    xassert(code.dim > 0);
+    /* if the operation has a side effect, invalidate and delete the
+     resultant value */
+    if (code.vflag && code.valid)
+    {  code.valid = 0;
+        mpl_internal_delete_value(mpl, code.type, code.value);
+    }
+    /* if resultant value is valid, no evaluation is needed */
+    if (code.valid)
+    {  return mpl_internal_copy_elemset(mpl, code.value.set);
+
+    }
+    /* evaluate pseudo-code recursively */
+    switch (code.op)
+    {  case O_MEMSET:
+        /* take member of set */
+    {   var tuple;
+        tuple = null;
+        for (e = code.arg.set.list; e != null; e = e.next)
+            tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_eval_symbolic(mpl,
+                e.x));
+        value = mpl_internal_copy_elemset(mpl,
+            mpl_internal_eval_member_set(mpl, code.arg.set.set, tuple));
+    }
+        break;
+        case O_MAKE:
+            /* make elemental set of n-tuples */
+        {
+            value = mpl_internal_create_elemset(mpl, code.dim);
+            for (e = code.arg.list; e != null; e = e.next)
+                mpl_internal_check_then_add(mpl, value, mpl_internal_eval_tuple(mpl, e.x));
+        }
+            break;
+        case O_UNION:
+            /* union of two elemental sets */
+            value = mpl_internal_set_union(mpl,
+                mpl_internal_eval_elemset(mpl, code.arg.arg.x),
+                mpl_internal_eval_elemset(mpl, code.arg.arg.y));
+            break;
+        case O_DIFF:
+            /* difference between two elemental sets */
+            value = mpl_internal_set_diff(mpl,
+                mpl_internal_eval_elemset(mpl, code.arg.arg.x),
+                mpl_internal_eval_elemset(mpl, code.arg.arg.y));
+            break;
+        case O_SYMDIFF:
+            /* symmetric difference between two elemental sets */
+            value = mpl_internal_set_symdiff(mpl,
+                mpl_internal_eval_elemset(mpl, code.arg.arg.x),
+                mpl_internal_eval_elemset(mpl, code.arg.arg.y));
+            break;
+        case O_INTER:
+            /* intersection of two elemental sets */
+            value = mpl_internal_set_inter(mpl,
+                mpl_internal_eval_elemset(mpl, code.arg.arg.x),
+                mpl_internal_eval_elemset(mpl, code.arg.arg.y));
+            break;
+        case O_CROSS:
+            /* cross (Cartesian) product of two elemental sets */
+            value = mpl_internal_set_cross(mpl,
+                mpl_internal_eval_elemset(mpl, code.arg.arg.x),
+                mpl_internal_eval_elemset(mpl, code.arg.arg.y));
+            break;
+        case O_DOTS:
+            /* build "arithmetic" elemental set */
+            value = mpl_internal_create_arelset(mpl,
+                mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                mpl_internal_eval_numeric(mpl, code.arg.arg.y),
+                code.arg.arg.z == null ? 1.0 : mpl_internal_eval_numeric(mpl,
+                    code.arg.arg.z));
+            break;
+        case O_FORK:
+            /* if-then-else */
+            if (mpl_internal_eval_logical(mpl, code.arg.arg.x))
+                value = mpl_internal_eval_elemset(mpl, code.arg.arg.y);
+            else
+                value = mpl_internal_eval_elemset(mpl, code.arg.arg.z);
+            break;
+        case O_SETOF:
+            /* compute elemental set */
+        {   info ={};
+            info.code = code;
+            info.value = mpl_internal_create_elemset(mpl, code.dim);
+            mpl_internal_loop_within_domain(mpl, code.arg.loop.domain, info,
+                mpl_internal_iter_set_func);
+            value = info.value;
+        }
+            break;
+        case O_BUILD:
+            /* build elemental set identical to domain set */
+        {   info = {};
+            info.code = code;
+            info.value = mpl_internal_create_elemset(mpl, code.dim);
+            mpl_internal_loop_within_domain(mpl, code.arg.loop.domain, info,
+                mpl_internal_iter_set_func);
+            value = info.value;
+        }
+            break;
+        default:
+            xassert(code != code);
+    }
+    /* save resultant value */
+    xassert(!code.valid);
+    code.valid = 1;
+    code.value.set = mpl_internal_copy_elemset(mpl, value);
+    return value;
+}
+
+function mpl_internal_null_func(mpl, info){
+    /* this is dummy routine used to enter the domain scope */
+
+    xassert(info == null);
+}
+
+function mpl_internal_is_member(mpl, code, tuple){
+    var value, e, temp, j;
+    xassert(code != null);
+    xassert(code.type == A_ELEMSET);
+    xassert(code.dim > 0);
+    xassert(tuple != null);
+    switch (code.op)
+    {  case O_MEMSET:
+        /* check if given n-tuple is member of elemental set, which
+         is assigned to member of model set */
+    {
+        var set;
+        /* evaluate reference to elemental set */
+        temp = null;
+        for (e = code.arg.set.list; e != null; e = e.next)
+            temp = mpl_internal_expand_tuple(mpl, temp, mpl_internal_eval_symbolic(mpl,
+                e.x));
+        set = mpl_internal_eval_member_set(mpl, code.arg.set.set, temp);
+        /* check if the n-tuple is contained in the set array */
+        temp = mpl_internal_build_subtuple(mpl, tuple, set.dim);
+        value = (mpl_internal_find_tuple(mpl, set, temp) != null);
+    }
+        break;
+        case O_MAKE:
+            /* check if given n-tuple is member of literal set */
+        {
+            var that;
+            value = 0;
+            temp = mpl_internal_build_subtuple(mpl, tuple, code.dim);
+            for (e = code.arg.list; e != null; e = e.next)
+            {  that = mpl_internal_eval_tuple(mpl, e.x);
+                value = (mpl_internal_compare_tuples(mpl, temp, that) == 0);
+                if (value) break;
+            }
+        }
+            break;
+        case O_UNION:
+            value = mpl_internal_is_member(mpl, code.arg.arg.x, tuple) ||
+                mpl_internal_is_member(mpl, code.arg.arg.y, tuple);
+            break;
+        case O_DIFF:
+            value = mpl_internal_is_member(mpl, code.arg.arg.x, tuple) &&
+                !mpl_internal_is_member(mpl, code.arg.arg.y, tuple);
+            break;
+        case O_SYMDIFF:
+        {   var in1 = mpl_internal_is_member(mpl, code.arg.arg.x, tuple);
+            var in2 = mpl_internal_is_member(mpl, code.arg.arg.y, tuple);
+            value = (in1 && !in2) || (!in1 && in2);
+        }
+            break;
+        case O_INTER:
+            value = mpl_internal_is_member(mpl, code.arg.arg.x, tuple) &&
+                mpl_internal_is_member(mpl, code.arg.arg.y, tuple);
+            break;
+        case O_CROSS:
+        {
+            value = mpl_internal_is_member(mpl, code.arg.arg.x, tuple);
+            if (value)
+            {  for (j = 1; j <= code.arg.arg.x.dim; j++)
+            {  xassert(tuple != null);
+                tuple = tuple.next;
+            }
+                value = mpl_internal_is_member(mpl, code.arg.arg.y, tuple);
+            }
+        }
+            break;
+        case O_DOTS:
+            /* check if given 1-tuple is member of "arithmetic" set */
+        {
+            var x, t0, tf, dt;
+            xassert(code.dim == 1);
+            /* compute "parameters" of the "arithmetic" set */
+            t0 = mpl_internal_eval_numeric(mpl, code.arg.arg.x);
+            tf = mpl_internal_eval_numeric(mpl, code.arg.arg.y);
+            if (code.arg.arg.z == null)
+                dt = 1.0;
+            else
+                dt = mpl_internal_eval_numeric(mpl, code.arg.arg.z);
+            /* make sure the parameters are correct */
+            mpl_internal_arelset_size(mpl, t0, tf, dt);
+            /* if component of 1-tuple is symbolic, not numeric, the
+             1-tuple cannot be member of "arithmetic" set */
+            xassert(tuple.sym != null);
+            if (tuple.sym.str != null)
+            {  value = 0;
+                break;
+            }
+            /* determine numeric value of the component */
+            x = tuple.sym.num;
+            /* if the component value is out of the set range, the
+             1-tuple is not in the set */
+            if (dt > 0.0 && !(t0 <= x && x <= tf) ||
+                dt < 0.0 && !(tf <= x && x <= t0))
+            {  value = 0;
+                break;
+            }
+            /* estimate ordinal number of the 1-tuple in the set */
+            j = ((((x - t0) / dt) + 0.5)|0) + 1;
+            /* perform the main check */
+            value = (mpl_internal_arelset_member(mpl, t0, tf, dt, j) == x);
+        }
+            break;
+        case O_FORK:
+            /* check if given n-tuple is member of conditional set */
+            if (mpl_internal_eval_logical(mpl, code.arg.arg.x))
+                value = mpl_internal_is_member(mpl, code.arg.arg.y, tuple);
+            else
+                value = mpl_internal_is_member(mpl, code.arg.arg.z, tuple);
+            break;
+        case O_SETOF:
+            /* check if given n-tuple is member of computed set */
+            /* it is not clear how to efficiently perform the check not
+             computing the entire elemental set :+( */
+            mpl_internal_error(mpl, "implementation restriction; in/within setof{} not allowed");
+            break;
+        case O_BUILD:
+            /* check if given n-tuple is member of domain set */
+        {
+            temp = mpl_internal_build_subtuple(mpl, tuple, code.dim);
+            /* try to enter the domain scope; if it is successful,
+             the n-tuple is in the domain set */
+            value = (mpl_internal_eval_within_domain(mpl, code.arg.loop.domain,
+                temp, null, mpl_internal_null_func) == 0);
+        }
+            break;
+        default:
+            xassert(code != code);
+    }
+    return value;
+}
+
+function mpl_internal_iter_form_func(mpl, info)
+{     /* this is auxiliary routine used to perform iterated operation
+ on linear form "integrand" within domain scope */
+    switch (info.code.op)
+    {  case O_SUM:
+        /* summation over domain */
+        /* the routine linear_comb needs to look through all terms
+         of both linear forms to reduce identical terms, so using
+         it here is not a good idea (for example, evaluation of
+         sum{i in 1..n} x[i] required quadratic time); the better
+         idea is to gather all terms of the integrand in one list
+         and reduce identical terms only once after all terms of
+         the resultant linear form have been evaluated */
+    {   var term;
+        var form = mpl_internal_eval_formula(mpl, info.code.arg.loop.x);
+        if (info.value == null)
+        {  xassert(info.tail == null);
+            info.value = form;
+        }
+        else
+        {  xassert(info.tail != null);
+            info.tail.next = form;
+        }
+        for (term = form; term != null; term = term.next)
+            info.tail = term;
+    }
+        break;
+        default:
+            xassert(info != info);
+    }
+    return 0;
+}
+
+function mpl_internal_eval_formula(mpl, code){
+    var value;
+    xassert(code != null);
+    xassert(code.type == A_FORMULA);
+    xassert(code.dim == 0);
+    /* if the operation has a side effect, invalidate and delete the
+     resultant value */
+    if (code.vflag && code.valid)
+    {  code.valid = 0;
+        mpl_internal_delete_value(mpl, code.type, code.value);
+    }
+    /* if resultant value is valid, no evaluation is needed */
+    if (code.valid)
+    {  return mpl_internal_copy_formula(mpl, code.value.form);
+
+    }
+    /* evaluate pseudo-code recursively */
+    switch (code.op)
+    {  case O_MEMVAR:
+        /* take member of variable */
+    {
+        var e;
+        var tuple = null;
+        for (e = code.arg.var.list; e != null; e = e.next)
+            tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_eval_symbolic(mpl,
+                e.x));
+        xassert(code.arg.var.suff == DOT_NONE);
+        value = mpl_internal_single_variable(mpl,
+            mpl_internal_eval_member_var(mpl, code.arg.var.var, tuple));
+    }
+        break;
+        case O_CVTLFM:
+            /* convert to linear form */
+            value = mpl_internal_constant_term(mpl, mpl_internal_eval_numeric(mpl,
+                code.arg.arg.x));
+            break;
+        case O_PLUS:
+            /* unary plus */
+            value = mpl_internal_linear_comb(mpl,
+                0.0, mpl_internal_constant_term(mpl, 0.0),
+                +1.0, mpl_internal_eval_formula(mpl, code.arg.arg.x));
+            break;
+        case O_MINUS:
+            /* unary minus */
+            value = mpl_internal_linear_comb(mpl,
+                0.0, mpl_internal_constant_term(mpl, 0.0),
+                -1.0, mpl_internal_eval_formula(mpl, code.arg.arg.x));
+            break;
+        case O_ADD:
+            /* addition */
+            value = mpl_internal_linear_comb(mpl,
+                +1.0, mpl_internal_eval_formula(mpl, code.arg.arg.x),
+                +1.0, mpl_internal_eval_formula(mpl, code.arg.arg.y));
+            break;
+        case O_SUB:
+            /* subtraction */
+            value = mpl_internal_linear_comb(mpl,
+                +1.0, mpl_internal_eval_formula(mpl, code.arg.arg.x),
+                -1.0, mpl_internal_eval_formula(mpl, code.arg.arg.y));
+            break;
+        case O_MUL:
+            /* multiplication */
+            xassert(code.arg.arg.x != null);
+            xassert(code.arg.arg.y != null);
+            if (code.arg.arg.x.type == A_NUMERIC)
+            {  xassert(code.arg.arg.y.type == A_FORMULA);
+                value = mpl_internal_linear_comb(mpl,
+                    mpl_internal_eval_numeric(mpl, code.arg.arg.x),
+                    mpl_internal_eval_formula(mpl, code.arg.arg.y),
+                    0.0, mpl_internal_constant_term(mpl, 0.0));
+            }
+            else
+            {  xassert(code.arg.arg.x.type == A_FORMULA);
+                xassert(code.arg.arg.y.type == A_NUMERIC);
+                value = mpl_internal_linear_comb(mpl,
+                    mpl_internal_eval_numeric(mpl, code.arg.arg.y),
+                    mpl_internal_eval_formula(mpl, code.arg.arg.x),
+                    0.0, mpl_internal_constant_term(mpl, 0.0));
+            }
+            break;
+        case O_DIV:
+            /* division */
+            value = mpl_internal_linear_comb(mpl,
+                mpl_internal_fp_div(mpl, 1.0, mpl_internal_eval_numeric(mpl, code.arg.arg.y)),
+                mpl_internal_eval_formula(mpl, code.arg.arg.x),
+                0.0, mpl_internal_constant_term(mpl, 0.0));
+            break;
+        case O_FORK:
+            /* if-then-else */
+            if (mpl_internal_eval_logical(mpl, code.arg.arg.x))
+                value = mpl_internal_eval_formula(mpl, code.arg.arg.y);
+            else if (code.arg.arg.z == null)
+                value = mpl_internal_constant_term(mpl, 0.0);
+            else
+                value = mpl_internal_eval_formula(mpl, code.arg.arg.z);
+            break;
+        case O_SUM:
+            /* summation over domain */
+        {   var info = {};
+            info.code = code;
+            info.value = mpl_internal_constant_term(mpl, 0.0);
+            info.tail = null;
+            mpl_internal_loop_within_domain(mpl, code.arg.loop.domain, info,
+                mpl_internal_iter_form_func);
+            value = mpl_internal_reduce_terms(mpl, info.value);
+        }
+            break;
+        default:
+            xassert(code != code);
+    }
+    /* save resultant value */
+    xassert(!code.valid);
+    code.valid = 1;
+    code.value.form = mpl_internal_copy_formula(mpl, value);
+    return value;
+}
+
+function mpl_internal_clean_code(mpl, code){
+    var e;
+    /* if no pseudo-code is specified, do nothing */
+    if (code == null) return;
+    /* if resultant value is valid (exists), delete it */
+    if (code.valid)
+    {   code.valid = 0;
+        mpl_internal_delete_value(mpl, code.type, code.value);
+    }
+    /* recursively clean pseudo-code for operands */
+    switch (code.op)
+    {  case O_NUMBER:
+        case O_STRING:
+        case O_INDEX:
+            break;
+        case O_MEMNUM:
+        case O_MEMSYM:
+            for (e = code.arg.par.list; e != null; e = e.next)
+                mpl_internal_clean_code(mpl, e.x);
+            break;
+        case O_MEMSET:
+            for (e = code.arg.set.list; e != null; e = e.next)
+                mpl_internal_clean_code(mpl, e.x);
+            break;
+        case O_MEMVAR:
+            for (e = code.arg.var.list; e != null; e = e.next)
+                mpl_internal_clean_code(mpl, e.x);
+            break;
+        case O_MEMCON:
+            for (e = code.arg.con.list; e != null; e = e.next)
+                mpl_internal_clean_code(mpl, e.x);
+            break;
+        case O_TUPLE:
+        case O_MAKE:
+            for (e = code.arg.list; e != null; e = e.next)
+                mpl_internal_clean_code(mpl, e.x);
+            break;
+        case O_SLICE:
+            xassert(code != code);
+        case O_IRAND224:
+        case O_UNIFORM01:
+        case O_NORMAL01:
+        case O_GMTIME:
+            break;
+        case O_CVTNUM:
+        case O_CVTSYM:
+        case O_CVTLOG:
+        case O_CVTTUP:
+        case O_CVTLFM:
+        case O_PLUS:
+        case O_MINUS:
+        case O_NOT:
+        case O_ABS:
+        case O_CEIL:
+        case O_FLOOR:
+        case O_EXP:
+        case O_LOG:
+        case O_LOG10:
+        case O_SQRT:
+        case O_SIN:
+        case O_COS:
+        case O_ATAN:
+        case O_ROUND:
+        case O_TRUNC:
+        case O_CARD:
+        case O_LENGTH:
+            /* unary operation */
+            mpl_internal_clean_code(mpl, code.arg.arg.x);
+            break;
+        case O_ADD:
+        case O_SUB:
+        case O_LESS:
+        case O_MUL:
+        case O_DIV:
+        case O_IDIV:
+        case O_MOD:
+        case O_POWER:
+        case O_ATAN2:
+        case O_ROUND2:
+        case O_TRUNC2:
+        case O_UNIFORM:
+        case O_NORMAL:
+        case O_CONCAT:
+        case O_LT:
+        case O_LE:
+        case O_EQ:
+        case O_GE:
+        case O_GT:
+        case O_NE:
+        case O_AND:
+        case O_OR:
+        case O_UNION:
+        case O_DIFF:
+        case O_SYMDIFF:
+        case O_INTER:
+        case O_CROSS:
+        case O_IN:
+        case O_NOTIN:
+        case O_WITHIN:
+        case O_NOTWITHIN:
+        case O_SUBSTR:
+        case O_STR2TIME:
+        case O_TIME2STR:
+            /* binary operation */
+            mpl_internal_clean_code(mpl, code.arg.arg.x);
+            mpl_internal_clean_code(mpl, code.arg.arg.y);
+            break;
+        case O_DOTS:
+        case O_FORK:
+        case O_SUBSTR3:
+            /* ternary operation */
+            mpl_internal_clean_code(mpl, code.arg.arg.x);
+            mpl_internal_clean_code(mpl, code.arg.arg.y);
+            mpl_internal_clean_code(mpl, code.arg.arg.z);
+            break;
+        case O_MIN:
+        case O_MAX:
+            /* n-ary operation */
+            for (e = code.arg.list; e != null; e = e.next)
+                mpl_internal_clean_code(mpl, e.x);
+            break;
+        case O_SUM:
+        case O_PROD:
+        case O_MINIMUM:
+        case O_MAXIMUM:
+        case O_FORALL:
+        case O_EXISTS:
+        case O_SETOF:
+        case O_BUILD:
+            /* iterated operation */
+            mpl_internal_clean_domain(mpl, code.arg.loop.domain);
+            mpl_internal_clean_code(mpl, code.arg.loop.x);
+            break;
+        default:
+            xassert(code.op != code.op);
+    }
+}
+
+/**********************************************************************/
+/* * *                        DATA TABLES                         * * */
+/**********************************************************************/
+
+var mpl_tab_num_args = exports.mpl_tab_num_args = function(dca){
+    /* returns the number of arguments */
+    return dca.na;
+};
+
+var mpl_tab_get_arg = exports.mpl_tab_get_arg = function(dca, k){
+    /* returns pointer to k-th argument */
+    xassert(1 <= k && k <= dca.na);
+    return dca.arg[k];
+};
+
+var mpl_tab_num_flds = exports.mpl_tab_num_flds = function (dca){
+    /* returns the number of fields */
+    return dca.nf;
+};
+
+var mpl_tab_get_name = exports.mpl_tab_get_name = function(dca, k)
+{     /* returns pointer to name of k-th field */
+    xassert(1 <= k && k <= dca.nf);
+    return dca.name[k];
+};
+
+var mpl_tab_get_type = exports.mpl_tab_get_type = function(dca, k)
+{     /* returns type of k-th field */
+    xassert(1 <= k && k <= dca.nf);
+    return dca.type[k];
+};
+
+var mpl_tab_get_num = exports.mpl_tab_get_num = function(dca, k){
+    /* returns numeric value of k-th field */
+    xassert(1 <= k && k <= dca.nf);
+    xassert(dca.type[k] == 'N');
+    return dca.num[k];
+};
+
+var mpl_tab_get_str = exports.mpl_tab_get_str = function(dca, k){
+    /* returns pointer to string value of k-th field */
+    xassert(1 <= k && k <= dca.nf);
+    xassert(dca.type[k] == 'S');
+    xassert(dca.str[k] != null);
+    return dca.str[k];
+};
+
+var mpl_tab_set_num = exports.mpl_tab_set_num = function(dca, k, num){
+    /* assign numeric value to k-th field */
+    xassert(1 <= k && k <= dca.nf);
+    xassert(dca.type[k] == '?');
+    dca.type[k] = 'N';
+    dca.num[k] = num;
+};
+
+var mpl_tab_set_str = exports.mpl_tab_set_str = function(dca, k, str){
+    /* assign string value to k-th field */
+    xassert(1 <= k && k <= dca.nf);
+    xassert(dca.type[k] == '?');
+    xassert(str.length <= MAX_LENGTH);
+    xassert(dca.str[k] != null);
+    dca.type[k] = 'S';
+    dca.str[k] = str;
+};
+
+function mpl_internal_write_func(mpl, tab){
+    /* this is auxiliary routine to work within domain scope */
+    var dca = mpl.dca;
+    var out;
+    var sym;
+    var k;
+    /* evaluate field values */
+    k = 0;
+    for (out = tab.u.out.list; out != null; out = out.next)
+    {  k++;
+        switch (out.code.type)
+        {  case A_NUMERIC:
+            dca.type[k] = 'N';
+            dca.num[k] = mpl_internal_eval_numeric(mpl, out.code);
+            dca.str[k][0] = '\0';
+            break;
+            case A_SYMBOLIC:
+                sym = mpl_internal_eval_symbolic(mpl, out.code);
+                if (sym.str == null)
+                {  dca.type[k] = 'N';
+                    dca.num[k] = sym.num;
+                    dca.str[k][0] = '\0';
+                }
+                else
+                {  dca.type[k] = 'S';
+                    dca.num[k] = 0.0;
+                    dca.str[k] = sym.str;
+                }
+                break;
+            default:
+                xassert(out != out);
+        }
+    }
+    /* write record to output table */
+    mpl_tab_drv_write(mpl);
+    return 0;
+}
+
+function mpl_internal_execute_table(mpl, tab){
+    /* execute table statement */
+    var arg;
+    var fld;
+    var in_;
+    var out;
+    var dca;
+    var set;
+    var k;
+    var buf; // [MAX_LENGTH+1];
+    /* allocate table driver communication area */
+    xassert(mpl.dca == null);
+    mpl.dca = dca = {};
+    dca.id = 0;
+    dca.link = null;
+    dca.na = 0;
+    dca.arg = null;
+    dca.nf = 0;
+    dca.name = null;
+    dca.type = null;
+    dca.num = null;
+    dca.str = null;
+    /* allocate arguments */
+    xassert(dca.na == 0);
+    for (arg = tab.arg; arg != null; arg = arg.next)
+        dca.na++;
+    dca.arg = new Array(1+dca.na);
+    for (k = 1; k <= dca.na; k++) dca.arg[k] = null;
+    /* evaluate argument values */
+    k = 0;
+    for (arg = tab.arg; arg != null; arg = arg.next)
+    {
+        k++;
+        xassert(arg.code.type == A_SYMBOLIC);
+        var sym = mpl_internal_eval_symbolic(mpl, arg.code);
+        if (sym.str == null)
+            buf = String(sym.num);
+        else
+            buf = sym.str;
+        dca.arg[k] = buf;
+    }
+    /* perform table input/output */
+    switch (tab.type)    {
+        case A_INPUT:
+            /* read data from input table */
+            /* add the only member to the control set and assign it empty
+             elemental set */
+            set = tab.u.in.set;
+            if (set != null)
+            {  if (set.data)
+                mpl_internal_error(mpl, set.name + " already provided with data");
+                xassert(set.array.head == null);
+                mpl_internal_add_member(mpl, set.array, null).value.set =
+                    mpl_internal_create_elemset(mpl, set.dimen);
+                set.data = 1;
+            }
+            /* check parameters specified in the input list */
+            for (in_ = tab.u.in.list; in_ != null; in_ = in_.next)
+            {  if (in_.par.data)
+                mpl_internal_error(mpl, in_.par.name + " already provided with data");
+                in_.par.data = 1;
+            }
+            /* allocate and initialize fields */
+            xassert(dca.nf == 0);
+            for (fld = tab.u.in.fld; fld != null; fld = fld.next)
+                dca.nf++;
+            for (in_ = tab.u.in.list; in_ != null; in_ = in_.next)
+                dca.nf++;
+            dca.name = new Array(1+dca.nf);
+            dca.type = new Array(1+dca.nf);
+            dca.num = new Array(1+dca.nf);
+            dca.str = new Array(1+dca.nf);
+            k = 0;
+            for (fld = tab.u.in.fld; fld != null; fld = fld.next)
+            {   k++;
+                dca.name[k] = fld.name;
+                dca.type[k] = '?';
+                dca.num[k] = 0.0;
+                dca.str[k] = '';
+            }
+            for (in_ = tab.u.in.list; in_ != null; in_ = in_.next)
+            {   k++;
+                dca.name[k] = in_.name;
+                dca.type[k] = '?';
+                dca.num[k] = 0.0;
+                dca.str[k] = '';
+            }
+            /* open input table */
+            mpl_tab_drv_open(mpl, 'R');
+            /* read and process records */
+            for (;;)
+            {   var tup;
+                /* reset field types */
+                for (k = 1; k <= dca.nf; k++)
+                    dca.type[k] = '?';
+                /* read next record */
+                if (mpl_tab_drv_read(mpl)) break;
+                /* all fields must be set by the driver */
+                for (k = 1; k <= dca.nf; k++)
+                {  if (dca.type[k] == '?')
+                    mpl_internal_error(mpl, "field " + dca.name[k] + " missing in input table");
+                }
+                /* construct n-tuple */
+                tup = null;
+                k = 0;
+                for (fld = tab.u.in.fld; fld != null; fld = fld.next)
+                {  k++;
+                    xassert(k <= dca.nf);
+                    switch (dca.type[k])
+                    {  case 'N':
+                        tup = mpl_internal_expand_tuple(mpl, tup, mpl_internal_create_symbol_num(mpl,
+                            dca.num[k]));
+                        break;
+                        case 'S':
+                            xassert(dca.str[k].length <= MAX_LENGTH);
+                            tup = mpl_internal_expand_tuple(mpl, tup, mpl_internal_create_symbol_str(mpl, dca.str[k]));
+                            break;
+                        default:
+                            xassert(dca != dca);
+                    }
+                }
+                /* add n-tuple just read to the control set */
+                if (tab.u.in.set != null)
+                    mpl_internal_check_then_add(mpl, tab.u.in.set.array.head.value.set,
+                        mpl_internal_copy_tuple(mpl, tup));
+                /* assign values to the parameters in the input list */
+                for (in_ = tab.u.in.list; in_ != null; in_ = in_.next)
+                {   var memb;
+                    k++;
+                    xassert(k <= dca.nf);
+                    /* there must be no member with the same n-tuple */
+                    if (mpl_internal_find_member(mpl, in_.par.array, tup) != null)
+                        mpl_internal_error(mpl, in_.par.name + mpl_internal_format_tuple(mpl, '[', tup) + " already defined");
+                    /* create new parameter member with given n-tuple */
+                    memb = mpl_internal_add_member(mpl, in_.par.array, mpl_internal_copy_tuple(mpl, tup))
+                    ;
+                    /* assign value to the parameter member */
+                    switch (in_.par.type)
+                    {  case A_NUMERIC:
+                        case A_INTEGER:
+                        case A_BINARY:
+                            if (dca.type[k] != 'N')
+                                mpl_internal_error(mpl, in_.par.name + " requires numeric data");
+                            memb.value.num = dca.num[k];
+                            break;
+                        case A_SYMBOLIC:
+                            switch (dca.type[k])
+                            {  case 'N':
+                                memb.value.sym = mpl_internal_create_symbol_num(mpl,
+                                    dca.num[k]);
+                                break;
+                                case 'S':
+                                    xassert(dca.str[k].length <= MAX_LENGTH);
+                                    memb.value.sym = mpl_internal_create_symbol_str(mpl, dca.str[k]);
+                                    break;
+                                default:
+                                    xassert(dca != dca);
+                            }
+                            break;
+                        default:
+                            xassert(in_ != in_);
+                    }
+                }
+            }
+            /* close input table */
+            mpl_tab_drv_close(mpl);
+            break;
+        case A_OUTPUT:
+            /* write data to output table */
+            /* allocate and initialize fields */
+            xassert(dca.nf == 0);
+            for (out = tab.u.out.list; out != null; out = out.next)
+                dca.nf++;
+            dca.name = new Array(1+dca.nf);
+            dca.type = new Array(1+dca.nf);
+            dca.num = new Array(1+dca.nf);
+            dca.str = new Array(1+dca.nf);
+            k = 0;
+            for (out = tab.u.out.list; out != null; out = out.next)
+            {  k++;
+                dca.name[k] = out.name;
+                dca.type[k] = '?';
+                dca.num[k] = 0.0;
+                dca.str[k] = '';
+            }
+            /* open output table */
+            mpl_tab_drv_open(mpl, 'W');
+            /* evaluate fields and write records */
+            mpl_internal_loop_within_domain(mpl, tab.u.out.domain, tab, mpl_internal_write_func);
+            /* close output table */
+            mpl_tab_drv_close(mpl);
+            break;
+        default:
+            xassert(tab != tab);
+    }
+
+
+
+    /* free table driver communication area */
+    mpl_internal_free_dca(mpl);
+}
+
+function mpl_internal_free_dca(mpl)
+{     /* free table driver communucation area */
+    var dca = mpl.dca;
+    if (dca != null)
+    {  if (dca.link != null)
+        mpl_tab_drv_close(mpl);
+        mpl.dca = null;
+    }
+}
+
+function mpl_internal_clean_table(mpl, tab){
+    /* clean table statement */
+    var arg;
+    var out;
+    /* clean string list */
+    for (arg = tab.arg; arg != null; arg = arg.next)
+        mpl_internal_clean_code(mpl, arg.code);
+    switch (tab.type)
+    {  case A_INPUT:
+        break;
+        case A_OUTPUT:
+            /* clean subscript domain */
+            mpl_internal_clean_domain(mpl, tab.u.out.domain);
+            /* clean output list */
+            for (out = tab.u.out.list; out != null; out = out.next)
+                mpl_internal_clean_code(mpl, out.code);
+            break;
+        default:
+            xassert(tab != tab);
+    }
+}
+
+
+/**********************************************************************/
+/* * *                      MODEL STATEMENTS                      * * */
+/**********************************************************************/
+
+function mpl_internal_check_func(mpl, chk){
+    /* this is auxiliary routine to work within domain scope */
+    if (!mpl_internal_eval_logical(mpl, chk.code))
+        mpl_internal_error(mpl, "check" + mpl_internal_format_tuple(mpl, '[', mpl_internal_get_domain_tuple(mpl, chk.domain)) + " failed");
+    return 0;
+}
+
+function mpl_internal_execute_check(mpl, chk){
+    mpl_internal_loop_within_domain(mpl, chk.domain, chk, mpl_internal_check_func);
+
+}
+
+function mpl_internal_clean_check(mpl, chk){
+    /* clean subscript domain */
+    mpl_internal_clean_domain(mpl, chk.domain);
+    /* clean pseudo-code for computing predicate */
+    mpl_internal_clean_code(mpl, chk.code);
+}
+
+function mpl_internal_display_set(mpl, set, memb){
+    /* display member of model set */
+    var s = memb.value.set;
+    var m;
+    mpl_internal_write_text(mpl, set.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + (s.head == null ? " is empty" : ":"));
+    for (m = s.head; m != null; m = m.next)
+        mpl_internal_write_text(mpl, "   " + mpl_internal_format_tuple(mpl, '(', m.tuple));
+}
+
+function mpl_internal_display_par(mpl, par, memb){
+    /* display member of model parameter */
+    switch (par.type)
+    {   case A_NUMERIC:
+        case A_INTEGER:
+        case A_BINARY:
+            mpl_internal_write_text(mpl, par.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + " = " + memb.value.num);
+            break;
+        case A_SYMBOLIC:
+            mpl_internal_write_text(mpl, par.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + " = " + mpl_internal_format_symbol(mpl, memb.value.sym));
+            break;
+        default:
+            xassert(par != par);
+    }
+}
+
+function mpl_internal_display_var(mpl, var_, memb, suff){
+    /* display member of model variable */
+    if (suff == DOT_NONE || suff == DOT_VAL)
+        mpl_internal_write_text(mpl, var_.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".val = " +
+            memb.value.var.prim);
+    else if (suff == DOT_LB)
+        mpl_internal_write_text(mpl, var_.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".lb = " +
+            (memb.value.var.var.lbnd == null ? -DBL_MAX : memb.value.var.lbnd));
+    else if (suff == DOT_UB)
+        mpl_internal_write_text(mpl, var_.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".ub = " +
+            (memb.value.var.var.ubnd == null ? +DBL_MAX : memb.value.var.ubnd));
+    else if (suff == DOT_STATUS)
+        mpl_internal_write_text(mpl, var_.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".status = " +
+            memb.value.var.stat);
+    else if (suff == DOT_DUAL)
+        mpl_internal_write_text(mpl, var_.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".dual = " +
+            memb.value.var.dual);
+    else
+        xassert(suff != suff);
+}
+
+function mpl_internal_display_con(mpl, con, memb, suff){
+    /* display member of model constraint */
+    if (suff == DOT_NONE || suff == DOT_VAL)
+        mpl_internal_write_text(mpl, con.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".val = " +
+            memb.value.con.prim);
+    else if (suff == DOT_LB)
+        mpl_internal_write_text(mpl, con.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".lb = " +
+            (memb.value.con.con.lbnd == null ? -DBL_MAX : memb.value.con.lbnd));
+    else if (suff == DOT_UB)
+        mpl_internal_write_text(mpl, con.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".ub = " +
+            (memb.value.con.con.ubnd == null ? +DBL_MAX : memb.value.con.ubnd));
+    else if (suff == DOT_STATUS)
+        mpl_internal_write_text(mpl, con.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".status = " +
+            memb.value.con.stat);
+    else if (suff == DOT_DUAL)
+        mpl_internal_write_text(mpl, con.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".dual = " +
+            memb.value.con.dual);
+    else
+        xassert(suff != suff);
+}
+
+function mpl_internal_display_memb(mpl, code){
+    /* display member specified by pseudo-code */
+    var memb = {};
+    var e;
+    xassert(code.op == O_MEMNUM || code.op == O_MEMSYM
+        || code.op == O_MEMSET || code.op == O_MEMVAR
+        || code.op == O_MEMCON);
+    memb.tuple = null;
+    for (e = code.arg.par.list; e != null; e = e.next)
+        memb.tuple = mpl_internal_expand_tuple(mpl, memb.tuple, mpl_internal_eval_symbolic(mpl,
+            e.x));
+    switch (code.op)
+    {  case O_MEMNUM:
+        memb.value.num = mpl_internal_eval_member_num(mpl, code.arg.par.par,
+            memb.tuple);
+        mpl_internal_display_par(mpl, code.arg.par.par, memb);
+        break;
+        case O_MEMSYM:
+            memb.value.sym = mpl_internal_eval_member_sym(mpl, code.arg.par.par,
+                memb.tuple);
+            mpl_internal_display_par(mpl, code.arg.par.par, memb);
+            break;
+        case O_MEMSET:
+            memb.value.set = mpl_internal_eval_member_set(mpl, code.arg.set.set,
+                memb.tuple);
+            mpl_internal_display_set(mpl, code.arg.set.set, memb);
+            break;
+        case O_MEMVAR:
+            memb.value.var = mpl_internal_eval_member_var(mpl, code.arg.var.var,
+                memb.tuple);
+            mpl_internal_display_var
+                (mpl, code.arg.var.var, memb, code.arg.var.suff);
+            break;
+        case O_MEMCON:
+            memb.value.con = mpl_internal_eval_member_con(mpl, code.arg.con.con,
+                memb.tuple);
+            mpl_internal_display_con
+                (mpl, code.arg.con.con, memb, code.arg.con.suff);
+            break;
+        default:
+            xassert(code != code);
+    }
+}
+
+function mpl_internal_display_code(mpl, code){
+    /* display value of expression */
+    switch (code.type)
+    {  case A_NUMERIC:
+        /* numeric value */
+    {
+        var num = mpl_internal_eval_numeric(mpl, code);
+        mpl_internal_write_text(mpl, String(num));
+    }
+        break;
+        case A_SYMBOLIC:
+            /* symbolic value */
+        {
+            var sym = mpl_internal_eval_symbolic(mpl, code);
+            mpl_internal_write_text(mpl, mpl_internal_format_symbol(mpl, sym));
+        }
+            break;
+        case A_LOGICAL:
+            /* logical value */
+        {
+            var bit = mpl_internal_eval_logical(mpl, code);
+            mpl_internal_write_text(mpl, bit ? "true" : "false");
+        }
+            break;
+        case A_TUPLE:
+            /* n-tuple */
+        {
+            var tuple = mpl_internal_eval_tuple(mpl, code);
+            mpl_internal_write_text(mpl, mpl_internal_format_tuple(mpl, '(', tuple));
+        }
+            break;
+        case A_ELEMSET:
+            /* elemental set */
+        {   var set = mpl_internal_eval_elemset(mpl, code);
+            if (set.head == 0)
+                mpl_internal_write_text(mpl, "set is empty");
+            for (var memb = set.head; memb != null; memb = memb.next)
+                mpl_internal_write_text(mpl, "   " + mpl_internal_format_tuple(mpl, '(', memb.tuple));
+        }
+            break;
+        case A_FORMULA:
+            /* linear form */
+        {   var term;
+            var form = mpl_internal_eval_formula(mpl, code);
+            if (form == null)
+                mpl_internal_write_text(mpl, "linear form is empty");
+            for (term = form; term != null; term = term.next)
+            {  if (term.var == null)
+                mpl_internal_write_text(mpl, "   " + term.coef);
+            else
+                mpl_internal_write_text(mpl, "   " + term.coef + " " + term.var.var.name + mpl_internal_format_tuple(mpl, '[', term.var.memb.tuple));
+            }
+        }
+            break;
+        default:
+            xassert(code != code);
+    }
+}
+
+function mpl_internal_display_func(mpl, dpy){
+    var memb;
+    /* this is auxiliary routine to work within domain scope */
+    for (var entry = dpy.list; entry != null; entry = entry.next)
+    {  if (entry.type == A_INDEX)
+    {  /* dummy index */
+        var slot = entry.u.slot;
+        mpl_internal_write_text(mpl, slot.name + " = " + mpl_internal_format_symbol(mpl, slot.value));
+    }
+    else if (entry.type == A_SET)
+    {  /* model set */
+        var set = entry.u.set;
+        if (set.assign != null)
+        {  /* the set has assignment expression; evaluate all its
+         members over entire domain */
+            mpl_internal_eval_whole_set(mpl, set);
+        }
+        else
+        {  /* the set has no assignment expression; refer to its
+         any existing member ignoring resultant value to check
+         the data provided the data section */
+            if (set.gadget != null && set.data == 0)
+            {  /* initialize the set with data from a plain set */
+                mpl_internal_saturate_set(mpl, set);
+            }
+            if (set.array.head != null)
+                mpl_internal_eval_member_set(mpl, set, set.array.head.tuple);
+        }
+        /* display all members of the set array */
+        if (set.array.head == null)
+            mpl_internal_write_text(mpl, set.name + " has empty content");
+        for (memb = set.array.head; memb != null; memb =
+            memb.next) mpl_internal_display_set(mpl, set, memb);
+    }
+    else if (entry.type == A_PARAMETER)
+    {  /* model parameter */
+        var par = entry.u.par;
+        if (par.assign != null)
+        {  /* the parameter has an assignment expression; evaluate
+         all its member over entire domain */
+            mpl_internal_eval_whole_par(mpl, par);
+        }
+        else
+        {  /* the parameter has no assignment expression; refer to
+         its any existing member ignoring resultant value to
+         check the data provided in the data section */
+            if (par.array.head != null)
+            {  if (par.type != A_SYMBOLIC)
+                mpl_internal_eval_member_num(mpl, par, par.array.head.tuple);
+            else
+                mpl_internal_eval_member_sym(mpl, par, par.array.head.tuple);
+            }
+        }
+        /* display all members of the parameter array */
+        if (par.array.head == null)
+            mpl_internal_write_text(mpl, par.name + " has empty content");
+        for (memb = par.array.head; memb != null; memb =
+            memb.next) mpl_internal_display_par(mpl, par, memb);
+    }
+    else if (entry.type == A_VARIABLE)
+    {  /* model variable */
+        var var_ = entry.u.var;
+        xassert(mpl.flag_p);
+        /* display all members of the variable array */
+        if (var_.array.head == null)
+            mpl_internal_write_text(mpl, var_.name + " has empty content");
+        for (memb = var_.array.head; memb != null; memb = memb.next)
+            mpl_internal_display_var(mpl, var_, memb, DOT_NONE);
+    }
+    else if (entry.type == A_CONSTRAINT)
+    {  /* model constraint */
+        var con = entry.u.con;
+        xassert(mpl.flag_p);
+        /* display all members of the constraint array */
+        if (con.array.head == null)
+            mpl_internal_write_text(mpl, con.name + " has empty content");
+        for (memb = con.array.head; memb != null; memb = memb.next)
+            mpl_internal_display_con(mpl, con, memb, DOT_NONE);
+    }
+    else if (entry.type == A_EXPRESSION)
+    {  /* expression */
+        var code = entry.u.code;
+        if (code.op == O_MEMNUM || code.op == O_MEMSYM ||
+            code.op == O_MEMSET || code.op == O_MEMVAR ||
+            code.op == O_MEMCON)
+            mpl_internal_display_memb(mpl, code);
+        else
+            mpl_internal_display_code(mpl, code);
+    }
+    else
+        xassert(entry != entry);
+    }
+    return 0;
+}
+
+function mpl_internal_execute_display(mpl, dpy){
+    mpl_internal_loop_within_domain(mpl, dpy.domain, dpy, mpl_internal_display_func);
+}
+
+function mpl_internal_clean_display(mpl, dpy){
+    var d;
+    /* clean subscript domain */
+    mpl_internal_clean_domain(mpl, dpy.domain);
+    /* clean display list */
+    for (d = dpy.list; d != null; d = d.next)
+    {  /* clean pseudo-code for computing expression */
+        if (d.type == A_EXPRESSION)
+            mpl_internal_clean_code(mpl, d.u.code);
+    }
+}
+
+function mpl_internal_print_char(mpl, c){
+    if (mpl.prt_fp == null)
+        mpl_internal_write_char(mpl, c);
+    else
+        mpl.prt_fp(c);
+}
+
+function mpl_internal_print_text(mpl, buf){
+    xassert(buf.length < OUTBUF_SIZE);
+    for (var c = 0; c < buf.length; c++) mpl_internal_print_char(mpl, buf[c]);
+}
+
+function mpl_internal_printf_func(mpl, prt){
+    /* this is auxiliary routine to work within domain scope */
+    var entry;
+    var fmt;
+    var c;
+    var value;
+    /* evaluate format control string */
+    var sym = mpl_internal_eval_symbolic(mpl, prt.fmt);
+    if (sym.str == null)
+        fmt = String(sym.num);
+    else
+        fmt = sym.str;
+    /* scan format control string and perform formatting output */
+    entry = prt.list;
+    for (c = 0; c < fmt.length; c++)
+    {  if (fmt[c] == '%')
+    {  /* scan format specifier */
+        c++;
+        if (fmt[c] == '%')
+        {  mpl_internal_print_char(mpl, '%');
+            continue;
+        }
+        if (entry == null) break;
+        /* scan optional flags */
+        while (fmt[c] == '-' || fmt[c] == '+' || fmt[c] == ' ' || fmt[c] == '#' || fmt[c] == '0') c++;
+        /* scan optional minimum field width */
+        while (isdigit(fmt[c])) c++;
+        /* scan optional precision */
+        if (fmt[c] == '.')
+        {  c++;
+            while (isdigit(fmt[c])) c++;
+        }
+        /* scan conversion specifier and perform formatting */
+        // save = (c+1);  *(c+1) = '\0';
+        if (fmt[c] == 'd' || fmt[c] == 'i' || fmt[c] == 'e' || fmt[c] == 'E' ||
+            fmt[c] == 'f' || fmt[c] == 'F' || fmt[c] == 'g' || fmt[c] == 'G')
+        {  /* the specifier requires numeric value */
+            xassert(entry != null);
+            switch (entry.code.type)
+            {  case A_NUMERIC:
+                value = mpl_internal_eval_numeric(mpl, entry.code);
+                break;
+                case A_SYMBOLIC:
+                    sym = mpl_internal_eval_symbolic(mpl, entry.code);
+                    if (sym.str != null)
+                        mpl_internal_error(mpl, "cannot convert " + mpl_internal_format_symbol(mpl, sym) + " to floating-point number");
+                    value = sym.num;
+                    break;
+                case A_LOGICAL:
+                    if (mpl_internal_eval_logical(mpl, entry.code))
+                        value = 1.0;
+                    else
+                        value = 0.0;
+                    break;
+                default:
+                    xassert(entry != entry);
+            }
+            if (fmt[c] == 'd' || fmt[c] == 'i')
+            {  var int_max = INT_MAX;
+                if (!(-int_max <= value && value <= +int_max))
+                    mpl_internal_error(mpl, "cannot convert " + value + " to integer");
+                mpl_internal_print_text(mpl, String(Math.floor(value + 0.5)|0));
+            }
+            else
+                mpl_internal_print_text(mpl, String(value));
+        }
+        else if (fmt[c] == 's')
+        {  /* the specifier requires symbolic value */
+            switch (entry.code.type)
+            {   case A_NUMERIC:
+                value = String(mpl_internal_eval_numeric(mpl, entry.code));
+                break;
+                case A_LOGICAL:
+                    if (mpl_internal_eval_logical(mpl, entry.code))
+                        value = "T";
+                    else
+                        value = "F";
+                    break;
+                case A_SYMBOLIC:
+                    sym = mpl_internal_eval_symbolic(mpl, entry.code);
+                    if (sym.str == null)
+                        value = String(sym.num);
+                    else
+                        value = sym.str;
+                    break;
+                default:
+                    xassert(entry != entry);
+            }
+            mpl_internal_print_text(mpl, String(value));
+        }
+        else
+            mpl_internal_error(mpl, "format specifier missing or invalid");
+        //*(c+1) = save;
+        entry = entry.next;
+    }
+    else if (fmt[c] == '\\')
+    {  /* write some control character */
+        c++;
+        if (fmt[c] == 't')
+            mpl_internal_print_char(mpl, '\t');
+        else if (fmt[c] == 'n')
+            mpl_internal_print_char(mpl, '\n');
+        else if (fmt[c] == '\0')
+        {  /* format string ends with backslash */
+            mpl_internal_error(mpl, "invalid use of escape character \\ in format control string");
+        }
+        else
+            mpl_internal_print_char(mpl, fmt[c]);
+    }
+    else
+    {  /* write character without formatting */
+        mpl_internal_print_char(mpl, fmt[c]);
+    }
+    }
+    return 0;
+}
+
+function mpl_internal_execute_printf(mpl, prt){
+    mpl_internal_loop_within_domain(mpl, prt.domain, prt, mpl_internal_printf_func);
+}
+
+function mpl_internal_clean_printf(mpl, prt){
+    var p;
+    /* clean subscript domain */
+    mpl_internal_clean_domain(mpl, prt.domain);
+    /* clean pseudo-code for computing format string */
+    mpl_internal_clean_code(mpl, prt.fmt);
+    /* clean printf list */
+    for (p = prt.list; p != null; p = p.next)
+    {  /* clean pseudo-code for computing value to be printed */
+        mpl_internal_clean_code(mpl, p.code);
+    }
+    /* clean pseudo-code for computing file name string */
+    mpl_internal_clean_code(mpl, prt.fname);
+}
+
+function mpl_internal_for_func(mpl, fur){
+    /* this is auxiliary routine to work within domain scope */
+    var save = mpl.stmt;
+    for (var stmt = fur.list; stmt != null; stmt = stmt.next)
+        mpl_internal_execute_statement(mpl, stmt);
+    mpl.stmt = save;
+    return 0;
+}
+
+function mpl_internal_execute_for(mpl, fur){
+    mpl_internal_loop_within_domain(mpl, fur.domain, fur, mpl_internal_for_func);
+}
+
+function mpl_internal_clean_for(mpl, fur){
+    /* clean subscript domain */
+    mpl_internal_clean_domain(mpl, fur.domain);
+    /* clean all sub-statements */
+    for (var stmt = fur.list; stmt != null; stmt = stmt.next)
+        mpl_internal_clean_statement(mpl, stmt);
+}
+
+function mpl_internal_execute_statement(mpl, stmt){
+    mpl.stmt = stmt;
+    switch (stmt.type)
+    {   case A_SET:
+        case A_PARAMETER:
+        case A_VARIABLE:
+            break;
+        case A_CONSTRAINT:
+            xprintf("Generating " + stmt.u.con.name + "...");
+            mpl_internal_eval_whole_con(mpl, stmt.u.con);
+            break;
+        case A_TABLE:
+            switch (stmt.u.tab.type)
+            {  case A_INPUT:
+                xprintf("Reading " + stmt.u.tab.name + "...");
+                break;
+                case A_OUTPUT:
+                    xprintf("Writing " + stmt.u.tab.name + "...");
+                    break;
+                default:
+                    xassert(stmt != stmt);
+            }
+            mpl_internal_execute_table(mpl, stmt.u.tab);
+            break;
+        case A_SOLVE:
+            break;
+        case A_CHECK:
+            xprintf("Checking (line " + stmt.line + ")...");
+            mpl_internal_execute_check(mpl, stmt.u.chk);
+            break;
+        case A_DISPLAY:
+            mpl_internal_write_text(mpl, "Display statement at line " + stmt.line);
+            mpl_internal_execute_display(mpl, stmt.u.dpy);
+            break;
+        case A_PRINTF:
+            mpl_internal_execute_printf(mpl, stmt.u.prt);
+            break;
+        case A_FOR:
+            mpl_internal_execute_for(mpl, stmt.u.fur);
+            break;
+        default:
+            xassert(stmt != stmt);
+    }
+}
+
+function mpl_internal_clean_statement(mpl, stmt){
+    switch(stmt.type){
+        case A_SET:
+            mpl_internal_clean_set(mpl, stmt.u.set); break;
+        case A_PARAMETER:
+            mpl_internal_clean_parameter(mpl, stmt.u.par); break;
+        case A_VARIABLE:
+            mpl_internal_clean_variable(mpl, stmt.u.var); break;
+        case A_CONSTRAINT:
+            mpl_internal_clean_constraint(mpl, stmt.u.con); break;
+        case A_TABLE:
+            mpl_internal_clean_table(mpl, stmt.u.tab); break;
+        case A_SOLVE:
+            break;
+        case A_CHECK:
+            mpl_internal_clean_check(mpl, stmt.u.chk); break;
+        case A_DISPLAY:
+            mpl_internal_clean_display(mpl, stmt.u.dpy); break;
+        case A_PRINTF:
+            mpl_internal_clean_printf(mpl, stmt.u.prt); break;
+        case A_FOR:
+            mpl_internal_clean_for(mpl, stmt.u.fur); break;
+        default:
+            xassert(stmt != stmt);
+    }
+}
+
+/* glpmpl04.c */
+
+/**********************************************************************/
+/* * *              GENERATING AND POSTSOLVING MODEL              * * */
+/**********************************************************************/
+
+function mpl_internal_alloc_content(mpl){
+    var stmt;
+    /* walk through all model statements */
+    for (stmt = mpl.model; stmt != null; stmt = stmt.next)
+    {  switch (stmt.type)
+    {  case A_SET:
+            /* model set */
+            xassert(stmt.u.set.array == null);
+            stmt.u.set.array = mpl_internal_create_array(mpl, A_ELEMSET,
+                stmt.u.set.dim);
+            break;
+        case A_PARAMETER:
+            /* model parameter */
+            xassert(stmt.u.par.array == null);
+            switch (stmt.u.par.type)
+            {  case A_NUMERIC:
+                case A_INTEGER:
+                case A_BINARY:
+                    stmt.u.par.array = mpl_internal_create_array(mpl, A_NUMERIC,
+                        stmt.u.par.dim);
+                    break;
+                case A_SYMBOLIC:
+                    stmt.u.par.array = mpl_internal_create_array(mpl, A_SYMBOLIC,
+                        stmt.u.par.dim);
+                    break;
+                default:
+                    xassert(stmt != stmt);
+            }
+            break;
+        case A_VARIABLE:
+            /* model variable */
+            xassert(stmt.u.var.array == null);
+            stmt.u.var.array = mpl_internal_create_array(mpl, A_ELEMVAR,
+                stmt.u.var.dim);
+            break;
+        case A_CONSTRAINT:
+            /* model constraint/objective */
+            xassert(stmt.u.con.array == null);
+            stmt.u.con.array = mpl_internal_create_array(mpl, A_ELEMCON,
+                stmt.u.con.dim);
+            break;
+        case A_TABLE:
+        case A_SOLVE:
+        case A_CHECK:
+        case A_DISPLAY:
+        case A_PRINTF:
+        case A_FOR:
+            /* functional statements have no content array */
+            break;
+        default:
+            xassert(stmt != stmt);
+    }
+    }
+}
+
+function mpl_internal_generate_model(mpl){
+    var stmt;
+
+    xassert(!mpl.flag_p);
+    for (stmt = mpl.model; stmt != null; stmt = stmt.next)
+    {   mpl_internal_execute_statement(mpl, stmt);
+        if (mpl.stmt.type == A_SOLVE) break;
+    }
+    mpl.stmt = stmt;
+}
+
+function mpl_internal_build_problem(mpl){
+    var stmt;
+
+    var memb;
+    var v;
+    var c;
+    var t;
+    var i, j;
+    xassert(mpl.m == 0);
+    xassert(mpl.n == 0);
+    xassert(mpl.row == null);
+    xassert(mpl.col == null);
+    /* check that all elemental variables has zero column numbers */
+    for (stmt = mpl.model; stmt != null; stmt = stmt.next)
+    {  if (stmt.type == A_VARIABLE)
+    {  v = stmt.u.var;
+        for (memb = v.array.head; memb != null; memb = memb.next)
+            xassert(memb.value.var.j == 0);
+    }
+    }
+    /* assign row numbers to elemental constraints and objectives */
+    for (stmt = mpl.model; stmt != null; stmt = stmt.next)
+    {  if (stmt.type == A_CONSTRAINT)
+    {  c = stmt.u.con;
+        for (memb = c.array.head; memb != null; memb = memb.next)
+        {  xassert(memb.value.con.i == 0);
+            memb.value.con.i = ++mpl.m;
+            /* walk through linear form and mark elemental variables,
+             which are referenced at least once */
+            for (t = memb.value.con.form; t != null; t = t.next)
+            {  xassert(t.var != null);
+                t.var.memb.value.var.j = -1;
+            }
+        }
+    }
+    }
+    /* assign column numbers to marked elemental variables */
+    for (stmt = mpl.model; stmt != null; stmt = stmt.next)
+    {  if (stmt.type == A_VARIABLE)
+    {  v = stmt.u.var;
+        for (memb = v.array.head; memb != null; memb = memb.next)
+            if (memb.value.var.j != 0) memb.value.var.j =
+                ++mpl.n;
+    }
+    }
+    /* build list of rows */
+    mpl.row = new Array(1+mpl.m);
+    for (i = 1; i <= mpl.m; i++) mpl.row[i] = null;
+    for (stmt = mpl.model; stmt != null; stmt = stmt.next)
+    {  if (stmt.type == A_CONSTRAINT)
+    {  c = stmt.u.con;
+        for (memb = c.array.head; memb != null; memb = memb.next)
+        {  i = memb.value.con.i;
+            xassert(1 <= i && i <= mpl.m);
+            xassert(mpl.row[i] == null);
+            mpl.row[i] = memb.value.con;
+        }
+    }
+    }
+    for (i = 1; i <= mpl.m; i++) xassert(mpl.row[i] != null);
+    /* build list of columns */
+    mpl.col = new Array(1+mpl.n);
+    for (j = 1; j <= mpl.n; j++) mpl.col[j] = null;
+    for (stmt = mpl.model; stmt != null; stmt = stmt.next)
+    {  if (stmt.type == A_VARIABLE)
+    {  v = stmt.u.var;
+        for (memb = v.array.head; memb != null; memb = memb.next)
+        {  j = memb.value.var.j;
+            if (j == 0) continue;
+            xassert(1 <= j && j <= mpl.n);
+            xassert(mpl.col[j] == null);
+            mpl.col[j] = memb.value.var;
+        }
+    }
+    }
+    for (j = 1; j <= mpl.n; j++) xassert(mpl.col[j] != null);
+}
+
+function mpl_internal_postsolve_model(mpl){
+    var stmt;
+
+    xassert(!mpl.flag_p);
+    mpl.flag_p = 1;
+    for (stmt = mpl.stmt; stmt != null; stmt = stmt.next)
+        mpl_internal_execute_statement(mpl, stmt);
+    mpl.stmt = null;
+}
+
+function mpl_internal_clean_model(mpl){
+    var stmt;
+    for (stmt = mpl.model; stmt != null; stmt = stmt.next)
+        mpl_internal_clean_statement(mpl, stmt);
+    /* check that all atoms have been returned to their pools
+     if (Object.keys(mpl.strings).length != 0)
+     error(mpl, "internal logic error: " + Object.keys(mpl.strings).length + " string segment(s) were lost");
+     if (Object.keys(mpl.symbols).length != 0)
+     error(mpl, "internal logic error: " + Object.keys(mpl.symbols).length + " symbol(s) were lost");
+     if (Object.keys(mpl.tuples).length != 0)
+     error(mpl, "internal logic error: " + Object.keys(mpl.tuples).length + " n-tuple component(s) were lost");
+     if (Object.keys(mpl.arrays).length != 0)
+     error(mpl, "internal logic error: " + Object.keys(mpl.arrays).length + " array(s) were lost");
+     if (Object.keys(mpl.members).length != 0)
+     error(mpl, "internal logic error: " + Object.keys(mpl.members).length + " array member(s) were lost");
+     if (Object.keys(mpl.elemvars).length != 0)
+     error(mpl, "internal logic error: " + Object.keys(mpl.elemvars).length + " elemental variable(s) were lost");
+     if (Object.keys(mpl.formulae).length != 0)
+     error(mpl, "internal logic error: " + Object.keys(mpl.formulae).length + " linear term(s) were lost");
+     if (Object.keys(mpl.elemcons).length != 0)
+     error(mpl, "internal logic error: " + Object.keys(mpl.elemcons).length + " elemental constraint(s) were lost");*/
+}
+
+/**********************************************************************/
+/* * *                        INPUT/OUTPUT                        * * */
+/**********************************************************************/
+
+function mpl_internal_open_input(mpl, name, callback){
+    mpl.line = 0;
+    mpl.c = '\n';
+    mpl.token = 0;
+    mpl.imlen = 0;
+    mpl.image = '';
+    mpl.value = 0.0;
+    mpl.b_token = T_EOF;
+    mpl.b_imlen = 0;
+    mpl.b_image = '';
+    mpl.b_value = 0.0;
+    mpl.f_dots = 0;
+    mpl.f_scan = 0;
+    mpl.f_token = 0;
+    mpl.f_imlen = 0;
+    mpl.f_image = '';
+    mpl.f_value = 0.0;
+    xfillArr(mpl.context, 0, ' ', CONTEXT_SIZE);
+    mpl.c_ptr = 0;
+    xassert(mpl.in_fp == null);
+    mpl.in_fp = callback;
+    mpl.in_file = name || 'input';
+    /* scan the very first character */
+    mpl_internal_get_char(mpl);
+    /* scan the very first token */
+    mpl_internal_get_token(mpl);
+}
+
+function mpl_internal_read_char(mpl){
+    var c;
+    xassert(mpl.in_fp != null);
+    c = mpl.in_fp();
+    if (c < 0)
+    {
+        c = MPL_EOF;
+    }
+    return c;
+}
+
+function mpl_internal_close_input(mpl){
+    xassert(mpl.in_fp != null);
+    mpl.in_fp = null;
+}
+
+function mpl_internal_open_output(mpl, name, callback){
+    xassert(mpl.out_fp == null);
+    if (callback == null)
+    {
+        mpl.out_fp = xprintf;
+    }
+    else
+    {   mpl.out_fp = callback;
+        if (mpl.out_fp == null)
+            mpl_internal_error(mpl, "unable to use output callback");
+        mpl.out_file = name;
+    }
+    mpl.flush = '';
+}
+
+function mpl_internal_write_char(mpl, c){
+    xassert(mpl.out_fp != null);
+    if (c == '\n'){
+        mpl.out_fp(mpl.flush);
+        mpl.flush = '';
+    } else
+        mpl.flush += c;
+}
+
+function mpl_internal_write_text(mpl, str){
+    xassert(mpl.out_fp != null);
+    mpl.out_fp(str);
+}
+
+function mpl_internal_flush_output(mpl){
+    xassert(mpl.out_fp != null);
+}
+
+/**********************************************************************/
+/* * *                      SOLVER INTERFACE                      * * */
+/**********************************************************************/
+
+function mpl_internal_error(mpl, msg){
+    var str;
+    switch (mpl.phase)
+    {  case 1:
+        case 2:
+            /* translation phase */
+            str = mpl.in_file + ":" + mpl.line + ": " + msg;
+            mpl_internal_print_context(mpl);
+            break;
+        case 3:
+            /* generation/postsolve phase */
+            str = (mpl.stmt == null ? 0 : mpl.stmt.line) + ": " + msg;
+            break;
+        default:
+            xassert(mpl != mpl);
+    }
+    mpl.phase = 4;
+    throw new Error(msg);
+}
+
+function mpl_internal_warning(mpl, msg){
+    switch (mpl.phase)
+    {  case 1:
+        case 2:
+            /* translation phase */
+            xprintf(mpl.in_file + ":" + mpl.line + ": warning: " + msg);
+            break;
+        case 3:
+            /* generation/postsolve phase */
+            xprintf(mpl.mod_file + ":" + (mpl.stmt == null ? 0 : mpl.stmt.line) + ": warning: " + msg);
+            break;
+        default:
+            xassert(mpl != mpl);
+    }
+}
+
+var mpl_initialize = exports.mpl_initialize = function(){
+    var mpl = {};
+    /* scanning segment */
+    mpl.line = 0;
+    mpl.c = 0;
+    mpl.token = 0;
+    mpl.imlen = 0;
+    mpl.image = '';
+    mpl.value = 0.0;
+    mpl.b_token = 0;
+    mpl.b_imlen = 0;
+    mpl.b_image = '';
+    mpl.b_value = 0.0;
+    mpl.f_dots = 0;
+    mpl.f_scan = 0;
+    mpl.f_token = 0;
+    mpl.f_imlen = 0;
+    mpl.f_image = '';
+    mpl.f_value = 0.0;
+    mpl.context = new Array(CONTEXT_SIZE);
+    xfillArr(mpl.context, 0, ' ', CONTEXT_SIZE);
+    mpl.c_ptr = 0;
+    mpl.flag_d = 0;
+    /* translating segment */
+    //mpl.pool = dmp_create_poolx(0);
+    mpl.tree = {};
+    mpl.model = null;
+    mpl.flag_x = 0;
+    mpl.as_within = 0;
+    mpl.as_in = 0;
+    mpl.as_binary = 0;
+    mpl.flag_s = 0;
+    /* common segment
+     mpl.strings = {};
+     mpl.symbols = {};
+     mpl.tuples = {};
+     mpl.arrays = {};
+     mpl.members = {};
+     mpl.elemvars = {};
+     mpl.formulae = {};
+     mpl.elemcons = {};*/
+    mpl.a_list = null;
+    mpl.sym_buf = '';
+    mpl.tup_buf = '';
+
+    /* generating/postsolving segment */
+    mpl.rand = rng_create_rand();
+    mpl.flag_p = 0;
+    mpl.stmt = null;
+    mpl.dca = null;
+    mpl.m = 0;
+    mpl.n = 0;
+    mpl.row = null;
+    mpl.col = null;
+    /* input/output segment */
+    mpl.in_fp = null;
+    mpl.in_file = null;
+    mpl.out_fp = null;
+    mpl.out_file = null;
+    mpl.prt_fp = null;
+    mpl.prt_file = null;
+    /* solver interface segment */
+    mpl.phase = 0;
+    mpl.mod_file = null;
+    mpl.mpl_buf = '';
+    return mpl;
+};
+
+var mpl_read_model = function(mpl, name, callback, skip_data){
+
+    function skip(){
+        xprintf(mpl.line + " line" + (mpl.line == 1 ? "" : "s") + " were read");
+        mpl_internal_close_input(mpl);
+        /* return to the calling program */
+        return mpl.phase;
+    }
+
+    if (mpl.phase != 0)
+        xerror("mpl_read_model: invalid call sequence");
+    if (callback == null)
+        xerror("mpl_read_model: no input specified");
+    /* translate model section */
+    mpl.phase = 1;
+    xprintf("Reading model section from " + name + " ...");
+    mpl_internal_open_input(mpl, name, callback);
+    mpl_internal_model_section(mpl);
+    if (mpl.model == null)
+        mpl_internal_error(mpl, "empty model section not allowed");
+    /* save name of the input text file containing model section for
+     error diagnostics during the generation phase */
+    mpl.mod_file = mpl.in_file;
+
+    /* allocate content arrays for all model objects */
+    mpl_internal_alloc_content(mpl);
+    /* optional data section may begin with the keyword 'data' */
+    if (mpl_internal_is_keyword(mpl, "data"))
+    {  if (skip_data)
+    {  mpl_internal_warning(mpl, "data section ignored");
+        return skip();
+    }
+        mpl.flag_d = 1;
+        mpl_internal_get_token(mpl /* data */);
+        if (mpl.token != T_SEMICOLON)
+            mpl_internal_error(mpl, "semicolon missing where expected");
+        mpl_internal_get_token(mpl /* ; */);
+        /* translate data section */
+        mpl.phase = 2;
+        xprintf("Reading data section from " + name + " ...");
+        mpl_internal_data_section(mpl);
+    }
+    /* process end statement */
+    mpl_internal_end_statement(mpl);
+    return skip();
+};
+
+var mpl_read_data = function(mpl, name, callback){
+    if (!(mpl.phase == 1 || mpl.phase == 2))
+        xerror("mpl_read_data: invalid call sequence");
+    if (callback == null)
+        xerror("mpl_read_data: no input specified");
+    /* process data section */
+    mpl.phase = 2;
+    xprintf("Reading data section from " + name + " ...");
+    mpl.flag_d = 1;
+    mpl_internal_open_input(mpl, name, callback);
+    /* in this case the keyword 'data' is optional */
+    if (mpl_internal_is_literal(mpl, "data"))
+    {  mpl_internal_get_token(mpl /* data */);
+        if (mpl.token != T_SEMICOLON)
+            mpl_internal_error(mpl, "semicolon missing where expected");
+        mpl_internal_get_token(mpl /* ; */);
+    }
+    mpl_internal_data_section(mpl);
+    /* process end statement */
+    mpl_internal_end_statement(mpl);
+    xprintf(mpl.line + " line" + (mpl.line == 1 ? "" : "s") + " were read");
+    mpl_internal_close_input(mpl);
+    /* return to the calling program */
+    return mpl.phase;
+};
+
+var mpl_generate = exports.mpl_generate = function(mpl, name, callback){
+    if (!(mpl.phase == 1 || mpl.phase == 2))
+        xerror("mpl_generate: invalid call sequence");
+    /* generate model */
+    mpl.phase = 3;
+    mpl_internal_open_output(mpl, name, callback);
+    mpl_internal_generate_model(mpl);
+    mpl_internal_flush_output(mpl);
+    /* build problem instance */
+    mpl_internal_build_problem(mpl);
+    /* generation phase has been finished */
+    xprintf("Model has been successfully generated");
+    /* return to the calling program */
+    return mpl.phase;
+};
+
+var mpl_get_prob_name = exports.mpl_get_prob_name = function(mpl){
+    return mpl.mod_file;
+};
+
+var mpl_get_num_rows = exports.mpl_get_num_rows = function(mpl){
+    if (mpl.phase != 3)
+        xerror("mpl_get_num_rows: invalid call sequence");
+    return mpl.m;
+};
+
+var mpl_get_num_cols = exports.mpl_get_num_cols = function(mpl){
+    if (mpl.phase != 3)
+        xerror("mpl_get_num_cols: invalid call sequence");
+    return mpl.n;
+};
+
+var mpl_get_row_name = exports.mpl_get_row_name = function(mpl, i){
+    if (mpl.phase != 3)
+        xerror("mpl_get_row_name: invalid call sequence");
+    if (!(1 <= i && i <= mpl.m))
+        xerror("mpl_get_row_name: i = " + i + "; row number out of range");
+    var name = mpl.row[i].con.name;
+    var len = name.length;
+    xassert(len <= 255);
+    name += mpl_internal_format_tuple(mpl, '[', mpl.row[i].memb.tuple).slice(0, 255);
+    if (name.length == 255) name = name.slice(0,252) + '...';
+    xassert(name.length <= 255);
+    return name;
+};
+
+var mpl_get_row_kind = mpl_get_row_kind = function(mpl, i){
+    var kind;
+    if (mpl.phase != 3)
+        xerror("mpl_get_row_kind: invalid call sequence");
+    if (!(1 <= i && i <= mpl.m))
+        xerror("mpl_get_row_kind: i = " + i + "; row number out of range");
+    switch (mpl.row[i].con.type)
+    {  case A_CONSTRAINT:
+        kind = MPL_ST; break;
+        case A_MINIMIZE:
+            kind = MPL_MIN; break;
+        case A_MAXIMIZE:
+            kind = MPL_MAX; break;
+        default:
+            xassert(mpl != mpl);
+    }
+    return kind;
+};
+
+var mpl_get_row_bnds = exports.mpl_get_row_bnds = function(mpl, i, callback){
+    var con;
+    var type;
+    var lb, ub;
+    if (mpl.phase != 3)
+        xerror("mpl_get_row_bnds: invalid call sequence");
+    if (!(1 <= i && i <= mpl.m))
+        xerror("mpl_get_row_bnds: i = " + i + "; row number out of range");
+    con = mpl.row[i];
+    lb = (con.con.lbnd == null ? -DBL_MAX : con.lbnd);
+    ub = (con.con.ubnd == null ? +DBL_MAX : con.ubnd);
+    if (lb == -DBL_MAX && ub == +DBL_MAX){
+        type = MPL_FR; lb = ub = 0.0;
+    }
+    else if (ub == +DBL_MAX){
+        type = MPL_LO; ub = 0.0;
+    }
+    else if (lb == -DBL_MAX){
+        type = MPL_UP; lb = 0.0;
+    }
+    else if (con.con.lbnd != con.con.ubnd)
+        type = MPL_DB;
+    else
+        type = MPL_FX;
+    callback(lb, ub);
+    return type;
+};
+
+var mpl_get_mat_row = exports.mpl_get_mat_row = function(mpl, i, ndx, val){
+    var term;
+    var len = 0;
+    if (mpl.phase != 3)
+        xerror("mpl_get_mat_row: invalid call sequence");
+    if (!(1 <= i && i <= mpl.m))
+        xerror("mpl_get_mat_row: i = " + i + "; row number out of range");
+    for (term = mpl.row[i].form; term != null; term = term.next)
+    {  xassert(term.var != null);
+        len++;
+        xassert(len <= mpl.n);
+        if (ndx != null) ndx[len] = term.var.j;
+        if (val != null) val[len] = term.coef;
+    }
+    return len;
+};
+
+var mpl_get_row_c0 = exports.mpl_get_row_c0 = function(mpl, i){
+    var con;
+    var c0;
+    if (mpl.phase != 3)
+        xerror("mpl_get_row_c0: invalid call sequence");
+    if (!(1 <= i && i <= mpl.m))
+        xerror("mpl_get_row_c0: i = " + i + "; row number out of range");
+    con = mpl.row[i];
+    if (con.con.lbnd == null && con.con.ubnd == null)
+        c0 = - con.lbnd;
+    else
+        c0 = 0.0;
+    return c0;
+};
+
+var mpl_get_col_name = exports.mpl_get_col_name = function(mpl, j){
+    if (mpl.phase != 3)
+        xerror("mpl_get_col_name: invalid call sequence");
+    if (!(1 <= j && j <= mpl.n))
+        xerror("mpl_get_col_name: j = " + j + "; column number out of range");
+    var name = mpl.col[j].var.name;
+    var len = name.length;
+    xassert(len <= 255);
+    name += mpl_internal_format_tuple(mpl, '[', mpl.col[j].memb.tuple);
+    if (name.length == 255) name = name.slice(0,252) + '...';
+    xassert(name.length <= 255);
+    return name;
+};
+
+var mpl_get_col_kind = exports.mpl_get_col_kind = function(mpl, j){
+    var kind;
+    if (mpl.phase != 3)
+        xerror("mpl_get_col_kind: invalid call sequence");
+    if (!(1 <= j && j <= mpl.n))
+        xerror("mpl_get_col_kind: j = " + j + "; column number out of range");
+    switch (mpl.col[j].var.type)
+    {  case A_NUMERIC:
+        kind = MPL_NUM; break;
+        case A_INTEGER:
+            kind = MPL_INT; break;
+        case A_BINARY:
+            kind = MPL_BIN; break;
+        default:
+            xassert(mpl != mpl);
+    }
+    return kind;
+};
+
+var mpl_get_col_bnds = exports.mpl_get_col_bnds = function(mpl, j, callback){
+    var var_;
+    var type;
+    var lb, ub;
+    if (mpl.phase != 3)
+        xerror("mpl_get_col_bnds: invalid call sequence");
+    if (!(1 <= j && j <= mpl.n))
+        xerror("mpl_get_col_bnds: j = " + j + "; column number out of range");
+    var_ = mpl.col[j];
+    lb = (var_.var.lbnd == null ? -DBL_MAX : var_.lbnd);
+    ub = (var_.var.ubnd == null ? +DBL_MAX : var_.ubnd);
+    if (lb == -DBL_MAX && ub == +DBL_MAX){
+        type = MPL_FR; lb = ub = 0.0;
+    }
+    else if (ub == +DBL_MAX){
+        type = MPL_LO; ub = 0.0;
+    }
+    else if (lb == -DBL_MAX){
+        type = MPL_UP; lb = 0.0;
+    }
+    else if (var_.var.lbnd != var_.var.ubnd)
+        type = MPL_DB;
+    else
+        type = MPL_FX;
+    callback(lb, ub);
+    return type;
+};
+
+var mpl_has_solve_stmt = exports.mpl_has_solve_stmt = function(mpl){
+    if (mpl.phase != 3)
+        xerror("mpl_has_solve_stmt: invalid call sequence");
+    return mpl.flag_s;
+};
+
+var mpl_put_row_soln = exports.mpl_put_row_soln = function(mpl, i, stat, prim, dual){
+    /* store row (constraint/objective) solution components */
+    xassert(mpl.phase == 3);
+    xassert(1 <= i && i <= mpl.m);
+    mpl.row[i].stat = stat;
+    mpl.row[i].prim = prim;
+    mpl.row[i].dual = dual;
+};
+
+var mpl_put_col_soln = exports.mpl_put_col_soln = function (mpl, j, stat, prim, dual){
+    /* store column (variable) solution components */
+    xassert(mpl.phase == 3);
+    xassert(1 <= j && j <= mpl.n);
+    mpl.col[j].stat = stat;
+    mpl.col[j].prim = prim;
+    mpl.col[j].dual = dual;
+};
+
+var mpl_postsolve = exports.mpl_postsolve = function(mpl){
+    if (!(mpl.phase == 3 && !mpl.flag_p))
+        xerror("mpl_postsolve: invalid call sequence");
+    /* perform postsolving */
+    mpl_internal_postsolve_model(mpl);
+    mpl_internal_flush_output(mpl);
+    /* postsolving phase has been finished */
+    xprintf("Model has been successfully processed");
+    /* return to the calling program */
+    return mpl.phase;
+};
+
+var mpl_terminate = exports.mpl_terminate = function(mpl){
+    switch (mpl.phase)
+    {   case 0:
+        case 1:
+        case 2:
+        case 3:
+            /* there were no errors; clean the model content */
+            mpl_internal_clean_model(mpl);
+            xassert(mpl.a_list == null);
+            xassert(mpl.dca == null);
+            break;
+        case 4:
+            /* model processing has been finished due to error; delete
+             search trees, which may be created for some arrays */
+        {
+            for (var a = mpl.a_list; a != null; a = a.next)
+                if (a.tree != null) delete(a.tree);
+        }
+            mpl_internal_free_dca(mpl);
+            break;
+        default:
+            xassert(mpl != mpl);
+    }
+};
+
+/* glpmpl05.c */
+
+function mpl_internal_fn_gmtime(mpl){
+    /* obtain the current calendar time (UTC) */
+    return Math.round(Date.now() / 1000);
+}
+
+const mpl_internal_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const mpl_internal_moon = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function mpl_internal_mulstr(v, n){
+    var ret = '';
+    while (n > 0) {
+        ret += v;
+        n--;
+    }
+    return ret;
+}
+
+function mpl_internal_error1(mpl, str, s, fmt, f, msg){
+    xprintf("Input string passed to str2time:");
+    xprintf(str);
+    xprintf(mpl_internal_mulstr('^', s + 1));
+    xprintf("Format string passed to str2time:\n");
+    xprintf(fmt);
+    xprintf(mpl_internal_mulstr('^', f + 1));
+    mpl_internal_error(mpl, msg);
+}
+
+function mpl_internal_fn_str2time(mpl, str, fmt){
+    /* convert character string to the calendar time */
+    var j, year, month, day, hh, mm, ss, zone;
+    var s, f;
+
+    function err1(){mpl_internal_error1(mpl, str, s, fmt, f, "time zone offset value incomplete or invalid")}
+    function err2(){mpl_internal_error1(mpl, str, s, fmt, f, "time zone offset value out of range")}
+    function test(){
+        /* check a matching character in the input string */
+        if (str[s] != fmt[f])
+            mpl_internal_error1(mpl, str, s, fmt, f, "character mismatch");
+        s++;
+    }
+
+    year = month = day = hh = mm = ss = -1;
+    zone = INT_MAX;
+    s = 0;
+    for (f = 0; f < fmt.length; f++)
+    {  if (fmt[f] == '%')
+    {  f++;
+        if (fmt[f] == 'b' || fmt[f] == 'h')
+        {  /* the abbreviated month name */
+            var k;
+            var name;
+            if (month >= 0)
+                mpl_internal_error1(mpl, str, s, fmt, f, "month multiply specified");
+            while (str[s] == ' ') s++;
+            for (month = 1; month <= 12; month++)
+            {  name = mpl_internal_moon[month-1];
+                var b = false;
+                for (k = 0; k <= 2; k++)
+                {  if (s[k].toUpperCase() != name[k].toUpperCase())
+                {b = true; break}
+                }
+                if (b) continue;
+                s += 3;
+                for (k = 3; name[k] != '\0'; k++)
+                {  if (str[s].toUpperCase() != name[k].toUpperCase()) break;
+                    s++;
+                }
+                break;
+            }
+            if (month > 12)
+                mpl_internal_error1(mpl, str, s, fmt, f, "abbreviated month name missing or invalid");
+        }
+        else if (fmt[f] == 'd')
+        {  /* the day of the month as a decimal number (01..31) */
+            if (day >= 0)
+                mpl_internal_error1(mpl, str, s, fmt, f, "day multiply specified");
+            while (str[s] == ' ') s++;
+            if (!('0' <= str[s] && str[s] <= '9'))
+                mpl_internal_error1(mpl, str, s, fmt, f, "day missing or invalid");
+            day = (str[s++]) - '0';
+            if ('0' <= str[s] && str[s] <= '9')
+                day = 10 * day + ((str[s++]) - '0');
+            if (!(1 <= day && day <= 31))
+                mpl_internal_error1(mpl, str, s, fmt, f, "day out of range");
+        }
+        else if (fmt[f] == 'H')
+        {  /* the hour as a decimal number, using a 24-hour clock
+         (00..23) */
+            if (hh >= 0)
+                mpl_internal_error1(mpl, str, s, fmt, f, "hour multiply specified")
+                ;
+            while (str[s] == ' ') s++;
+            if (!('0' <= str[s] && str[s] <= '9'))
+                mpl_internal_error1(mpl, str, s, fmt, f, "hour missing or invalid")
+                ;
+            hh = (str[s++]) - '0';
+            if ('0' <= str[s] && str[s] <= '9')
+                hh = 10 * hh + ((str[s++]) - '0');
+            if (!(0 <= hh && hh <= 23))
+                mpl_internal_error1(mpl, str, s, fmt, f, "hour out of range");
+        }
+        else if (fmt[f] == 'm')
+        {  /* the month as a decimal number (01..12) */
+            if (month >= 0)
+                mpl_internal_error1(mpl, str, s, fmt, f, "month multiply specified"
+                );
+            while (str[s] == ' ') s++;
+            if (!('0' <= str[s] && str[s] <= '9'))
+                mpl_internal_error1(mpl, str, s, fmt, f, "month missing or invalid"
+                );
+            month = (str[s++]) - '0';
+            if ('0' <= str[s] && str[s] <= '9')
+                month = 10 * month + ((str[s++]) - '0');
+            if (!(1 <= month && month <= 12))
+                mpl_internal_error1(mpl, str, s, fmt, f, "month out of range");
+        }
+        else if (fmt[f] == 'M')
+        {  /* the minute as a decimal number (00..59) */
+            if (mm >= 0)
+                mpl_internal_error1(mpl, str, s, fmt, f, "minute multiply specified");
+            while (str[s] == ' ') s++;
+            if (!('0' <= str[s] && str[s] <= '9'))
+                mpl_internal_error1(mpl, str, s, fmt, f, "minute missing or invalid");
+            mm = (str[s++]) - '0';
+            if ('0' <= str[s] && str[s] <= '9')
+                mm = 10 * mm + ((str[s++]) - '0');
+            if (!(0 <= mm && mm <= 59))
+                mpl_internal_error1(mpl, str, s, fmt, f, "minute out of range");
+        }
+        else if (fmt[f] == 'S')
+        {  /* the second as a decimal number (00..60) */
+            if (ss >= 0)
+                mpl_internal_error1(mpl, str, s, fmt, f, "second multiply specified");
+            while (str[s] == ' ') s++;
+            if (!('0' <= str[s] && str[s] <= '9'))
+                mpl_internal_error1(mpl, str, s, fmt, f, "second missing or invalid");
+            ss = (str[s++]) - '0';
+            if ('0' <= str[s] && str[s] <= '9')
+                ss = 10 * ss + ((str[s++]) - '0');
+            if (!(0 <= ss && ss <= 60))
+                mpl_internal_error1(mpl, str, s, fmt, f, "second out of range");
+        }
+        else if (fmt[f] == 'y')
+        {  /* the year without a century as a decimal number
+         (00..99); the values 00 to 68 mean the years 2000 to
+         2068 while the values 69 to 99 mean the years 1969 to
+         1999 */
+            if (year >= 0)
+                mpl_internal_error1(mpl, str, s, fmt, f, "year multiply specified")
+                ;
+            while (str[s] == ' ') s++;
+            if (!('0' <= str[s] && str[s] <= '9'))
+                mpl_internal_error1(mpl, str, s, fmt, f, "year missing or invalid")
+                ;
+            year = (str[s++]) - '0';
+            if ('0' <= str[s] && str[s] <= '9')
+                year = 10 * year + ((str[s++]) - '0');
+            year += (year >= 69 ? 1900 : 2000);
+        }
+        else if (fmt[f] == 'Y')
+        {  /* the year as a decimal number, using the Gregorian
+         calendar */
+            if (year >= 0)
+                mpl_internal_error1(mpl, str, s, fmt, f, "year multiply specified")
+                ;
+            while (str[s] == ' ') s++;
+            if (!('0' <= str[s] && str[s] <= '9'))
+                mpl_internal_error1(mpl, str, s, fmt, f, "year missing or invalid")
+                ;
+            year = 0;
+            for (j = 1; j <= 4; j++)
+            {  if (!('0' <= str[s] && str[s] <= '9')) break;
+                year = 10 * year + ((str[s++]) - '0');
+            }
+            if (!(1 <= year && year <= 4000))
+                mpl_internal_error1(mpl, str, s, fmt, f, "year out of range");
+        }
+        else if (fmt[f] == 'z')
+        {  /* time zone offset in the form zhhmm */
+            var z;
+            if (zone != INT_MAX)
+                mpl_internal_error1(mpl, str, s, fmt, f, "time zone offset multiply specified");
+            while (str[s] == ' ') s++;
+            if (str[s] == 'Z')
+            {   z = hh = mm = 0; s++;
+
+            } else {
+                if (str[s] == '+'){
+                    z = +1; s++;
+                }
+                else if (str[s] == '-'){
+                    z = -1; s++;
+                }
+                else
+                    mpl_internal_error1(mpl, str, s, fmt, f, "time zone offset sign missing");
+                hh = 0;
+                for (j = 1; j <= 2; j++)
+                {  if (!('0' <= str[s] && str[s] <= '9'))
+                    err1();
+                    hh = 10 * hh + ((str[s++]) - '0');
+                }
+                if (hh > 23)
+                    err2();
+                if (str[s] == ':')
+                {  s++;
+                    if (!('0' <= str[s] && str[s] <= '9')) err1();
+                }
+                mm = 0;
+                if (('0' <= str[s] && str[s] <= '9')){
+                    for (j = 1; j <= 2; j++)
+                    {  if (!('0' <= str[s] && str[s] <= '9')) err1();
+                        mm = 10 * mm + ((str[s++]) - '0');
+                    }
+                    if (mm > 59) err2();
+                }
+            }
+            zone = z * (60 * hh + mm);
+        }
+        else if (fmt[f] == '%')
+        {  /* literal % character */
+            test();
+        }
+        else
+            mpl_internal_error1(mpl, str, s, fmt, f, "invalid conversion specifier");
+    }
+    else if (fmt[f] == ' '){
+
+    }
+    else
+        test()
+    }
+    if (year < 0) year = 1970;
+    if (month < 0) month = 1;
+    if (day < 0) day = 1;
+    if (hh < 0) hh = 0;
+    if (mm < 0) mm = 0;
+    if (ss < 0) ss = 0;
+    if (zone == INT_MAX) zone = 0;
+    j = jday(day, month, year);
+    xassert(j >= 0);
+    return (((j - jday(1, 1, 1970)) * 24.0 + hh) * 60.0 + mm) * 60.0 + ss - 60.0 * zone;
+}
+
+function mpl_internal_error2(mpl, fmt, f, msg)
+{
+    xprintf("Format string passed to time2str:");
+    xprintf(fmt);
+    xprintf(mpl_internal_mulstr('^', f));
+    mpl_internal_error(mpl, msg);
+}
+
+function mpl_internal_weekday(j){
+    /* determine weekday number (1 = Mon, ..., 7 = Sun) */
+    return (j + jday(1, 1, 1970)) % 7 + 1;
+}
+
+function mpl_internal_firstday(year){
+    /* determine the first day of the first week for a specified year
+     according to ISO 8601 */
+    var j;
+    /* if 1 January is Monday, Tuesday, Wednesday or Thursday, it is
+     in week 01; if 1 January is Friday, Saturday or Sunday, it is
+     in week 52 or 53 of the previous year */
+    j = jday(1, 1, year) - jday(1, 1, 1970);
+    switch (mpl_internal_weekday(j))
+    {  case 1: /* 1 Jan is Mon */ j += 0; break;
+        case 2: /* 1 Jan is Tue */ j -= 1; break;
+        case 3: /* 1 Jan is Wed */ j -= 2; break;
+        case 4: /* 1 Jan is Thu */ j -= 3; break;
+        case 5: /* 1 Jan is Fri */ j += 3; break;
+        case 6: /* 1 Jan is Sat */ j += 2; break;
+        case 7: /* 1 Jan is Sun */ j += 1; break;
+        default: xassert(j != j);
+    }
+    /* the first day of the week must be Monday */
+    xassert(mpl_internal_weekday(j) == 1);
+    return j;
+}
+
+function mpl_internal_fn_time2str(mpl, t, fmt){
+    /* convert the calendar time to character string */
+    var j, year = 0, month = 0, day = 0, hh, mm, ss, len;
+    var temp;
+    var f;
+    var str = '', buf;
+    if (!(-62135596800.0 <= t && t <= 64092211199.0))
+        mpl_internal_error(mpl, "time2str(" + t + ",...); argument out of range");
+    t = Math.floor(t + 0.5);
+    temp = Math.abs(t) / 86400.0;
+    j = Math.floor(temp);
+    if (t < 0.0)
+    {  if (temp == Math.floor(temp))
+        j = - j;
+    else
+        j = - (j + 1);
+    }
+    xassert(jdate(j + jday(1, 1, 1970), function(d,m,y){day=d;month=m;year=y}) == 0);
+    ss = (t - 86400.0 * j)|0;
+    xassert(0 <= ss && ss < 86400);
+    mm = ss / 60; ss %= 60;
+    hh = mm / 60; mm %= 60;
+    len = 0;
+    for (f = 0; f < fmt.length; f++)
+    {  if (fmt[f] == '%')
+    {  f++;
+        if (fmt[f] == 'a')
+        {  /* the abbreviated weekday name */
+            buf = mpl_internal_week[mpl_internal_weekday(j)-1].slice(0,3);
+        }
+        else if (fmt[f] == 'A')
+        {  /* the full weekday name */
+            buf = mpl_internal_week[mpl_internal_weekday(j)-1];
+        }
+        else if (fmt[f] == 'b' || fmt[f] == 'h')
+        {  /* the abbreviated month name */
+            buf = mpl_internal_moon[month-1].slice(0, 3);
+        }
+        else if (fmt[f] == 'B')
+        {  /* the full month name */
+            buf = mpl_internal_moon[month-1];
+        }
+        else if (fmt[f] == 'C')
+        {  /* the century of the year */
+            buf = String(Math.floor(year / 100));
+        }
+        else if (fmt[f] == 'd')
+        {  /* the day of the month as a decimal number (01..31) */
+            buf = String(day);
+        }
+        else if (fmt[f] == 'D')
+        {  /* the date using the format %m/%d/%y */
+            buf = month + "/" + day + "/" + (year % 100);
+        }
+        else if (fmt[f] == 'e')
+        {  /* the day of the month like with %d, but padded with
+         blank (1..31) */
+            buf = String(day);
+        }
+        else if (fmt[f] == 'F')
+        {  /* the date using the format %Y-%m-%d */
+            sprintf(buf, year + "-" + month + "-" + day);
+        }
+        else if (fmt[f] == 'g')
+        {  /* the year corresponding to the ISO week number, but
+         without the century (range 00 through 99); this has
+         the same format and value as %y, except that if the
+         ISO week number (see %V) belongs to the previous or
+         next year, that year is used instead */
+            var iso;
+            if (j < mpl_internal_firstday(year))
+                iso = year - 1;
+            else if (j < mpl_internal_firstday(year + 1))
+                iso = year;
+            else
+                iso = year + 1;
+            buf = String(iso % 100);
+        }
+        else if (fmt[f] == 'G')
+        {  /* the year corresponding to the ISO week number; this
+         has the same format and value as %Y, excepth that if
+         the ISO week number (see %V) belongs to the previous
+         or next year, that year is used instead */
+            var iso;
+            if (j < mpl_internal_firstday(year))
+                iso = year - 1;
+            else if (j < mpl_internal_firstday(year + 1))
+                iso = year;
+            else
+                iso = year + 1;
+            buf = String(iso);
+        }
+        else if (fmt[f] == 'H')
+        {  /* the hour as a decimal number, using a 24-hour clock
+         (00..23) */
+            buf = String(hh);
+        }
+        else if (fmt[f] == 'I')
+        {  /* the hour as a decimal number, using a 12-hour clock
+         (01..12) */
+            buf = String(hh == 0 ? 12 : hh <= 12 ? hh : hh - 12);
+        }
+        else if (fmt[f] == 'j')
+        {  /* the day of the year as a decimal number (001..366) */
+            buf  = String(jday(day, month, year) - jday(1, 1, year) + 1);
+        }
+        else if (fmt[f] == 'k')
+        {  /* the hour as a decimal number, using a 24-hour clock
+         like %H, but padded with blank (0..23) */
+            buf = String(hh);
+        }
+        else if (fmt[f] == 'l')
+        {  /* the hour as a decimal number, using a 12-hour clock
+         like %I, but padded with blank (1..12) */
+            buf = String(hh == 0 ? 12 : hh <= 12 ? hh : hh - 12);
+        }
+        else if (fmt[f] == 'm')
+        {  /* the month as a decimal number (01..12) */
+            buf = String(month);
+        }
+        else if (fmt[f] == 'M')
+        {  /* the minute as a decimal number (00..59) */
+            buf = String(mm);
+        }
+        else if (fmt[f] == 'p')
+        {  /* either AM or PM, according to the given time value;
+         noon is treated as PM and midnight as AM */
+            buf = (hh <= 11 ? "AM" : "PM");
+        }
+        else if (fmt[f] == 'P')
+        {  /* either am or pm, according to the given time value;
+         noon is treated as pm and midnight as am */
+            buf = (hh <= 11 ? "am" : "pm");
+        }
+        else if (fmt[f] == 'r')
+        {  /* the calendar time using the format %I:%M:%S %p */
+            buf = (hh == 0 ? 12 : hh <= 12 ? hh : hh - 12) + ":" + mm + ":" + ss + " " + (hh <= 11 ? "AM" : "PM");
+        }
+        else if (fmt[f] == 'R')
+        {  /* the hour and minute using the format %H:%M */
+            buf = hh + ":" + mm;
+        }
+        else if (fmt[f] == 'S')
+        {  /* the second as a decimal number (00..59) */
+            buf = String(ss);
+        }
+        else if (fmt[f] == 'T')
+        {  /* the time of day using the format %H:%M:%S */
+            buf = hh + ":" + mm + ":" + ss;
+        }
+        else if (fmt[f] == 'u')
+        {  /* the day of the week as a decimal number (1..7),
+         Monday being 1 */
+            buf = String(mpl_internal_weekday(j));
+        }
+        else if (fmt[f] == 'U')
+        {  /* the week number of the current year as a decimal
+         number (range 00 through 53), starting with the first
+         Sunday as the first day of the first week; days
+         preceding the first Sunday in the year are considered
+         to be in week 00 */
+            /* sun = the first Sunday of the year */
+            var sun = jday(1, 1, year) - jday(1, 1, 1970);
+            sun += (7 - mpl_internal_weekday(sun));
+            buf = String((j + 7 - sun) / 7);
+        }
+        else if (fmt[f] == 'V')
+        {  /* the ISO week number as a decimal number (range 01
+         through 53); ISO weeks start with Monday and end with
+         Sunday; week 01 of a year is the first week which has
+         the majority of its days in that year; week 01 of
+         a year can contain days from the previous year; the
+         week before week 01 of a year is the last week (52 or
+         53) of the previous year even if it contains days
+         from the new year */
+            var iso;
+            if (j < mpl_internal_firstday(year))
+                iso = j - mpl_internal_firstday(year - 1);
+            else if (j < mpl_internal_firstday(year + 1))
+                iso = j - mpl_internal_firstday(year);
+            else
+                iso = j - mpl_internal_firstday(year + 1);
+            buf = String(iso / 7 + 1);
+        }
+        else if (fmt[f] == 'w')
+        {  /* the day of the week as a decimal number (0..6),
+         Sunday being 0 */
+            buf = String(mpl_internal_weekday(j) % 7);
+        }
+        else if (fmt[f] == 'W')
+        {  /* the week number of the current year as a decimal
+         number (range 00 through 53), starting with the first
+         Monday as the first day of the first week; days
+         preceding the first Monday in the year are considered
+         to be in week 00 */
+            /* mon = the first Monday of the year */
+            var mon = jday(1, 1, year) - jday(1, 1, 1970);
+            mon += (8 - mpl_internal_weekday(mon)) % 7;
+            buf = String((j + 7 - mon) / 7);
+        }
+        else if (fmt[f] == 'y')
+        {  /* the year without a century as a decimal number
+         (00..99) */
+            buf = String(year % 100);
+        }
+        else if (fmt[f] == 'Y')
+        {  /* the year as a decimal number, using the Gregorian
+         calendar */
+            buf = String(year);
+        }
+        else if (fmt[f] == '%')
+        {  /* a literal % character */
+            buf = '%';
+        }
+        else
+            mpl_internal_error2(mpl, fmt, f, "invalid conversion specifier");
+    }
+    else{
+        buf = fmt[f];
+        //buf[1] = '\0';
+    }
+        if (len + buf.length > MAX_LENGTH)
+            mpl_internal_error(mpl, "time2str; output string length exceeds " + MAX_LENGTH + " charaters");
+        str += buf;
+        len += buf.length;
+    }
+    return str;
+}
 function npp_error(){
 
 }
@@ -18100,7 +28749,7 @@ function npp_binarize_prob(npp){
             npp_lbnd_col(npp, col);
         /* now 0 <= x[q] <= u[q] */
         xassert(col.lb == 0.0);
-        u = col.ub;
+        u = col.ub|0;
         xassert(col.ub == u);
         /* if x[q] is binary, further processing is not needed */
         if (u == 1) continue;

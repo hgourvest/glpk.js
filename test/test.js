@@ -1,4 +1,4 @@
-require("repl").start("");
+
 
 var glpk = require('../dist/glpk.js');
 var fs = require('fs');
@@ -17,7 +17,7 @@ function saveToFile(lp, filename){
     }
 }
 
-function readFromFile(lp, filename){
+function readCplexFromFile(lp, filename){
     var str = fs.readFileSync(filename).toString();
     var pos = 0;
     glpk.glp_read_lp(lp, null,
@@ -30,10 +30,25 @@ function readFromFile(lp, filename){
     )
 }
 
+function readMathprogFromFile(tran, filename, skip){
+    var str = fs.readFileSync(filename).toString();
+    var pos = 0;
+    glpk.glp_mpl_read_model(tran, null,
+        function(){
+            if (pos < str.length){
+                //console.log(str[pos+1]);
+                return str[pos++];
+            } else
+                return -1;
+        },
+        skip
+    )
+}
+
 
 test1 = function (){
     var lp = glpk.glp_create_prob();
-    readFromFile(lp, __dirname + "/gap.lpt");
+    readCplexFromFile(lp, __dirname + "/gap.lpt");
     var smcp = {};
     glpk.glp_init_smcp(smcp);
     smcp.presolve = glpk.GLP_ON;
@@ -50,6 +65,35 @@ test1 = function (){
         console.log(glpk.glp_get_col_name(lp, i)  + " = " + glpk.glp_mip_col_val(lp, i));
     }
     glpk.glp_delete_prob(lp);
-}
+};
 
-test1();
+mathprog = function (file){
+    var lp = glpk.glp_create_prob();
+    var tran = glpk.glp_mpl_alloc_wksp();
+    glpk._glp_mpl_init_rand(tran, 1);
+    readMathprogFromFile(tran, __dirname + "/" + file, false);
+    //glpk.glp_mpl_read_data(tran, )
+
+    glpk.glp_mpl_generate(tran, null, console.log);
+    /* build the problem instance from the model */
+    glpk.glp_mpl_build_prob(tran, lp);
+
+    saveToFile(lp, __dirname + '/todd.lpt');
+
+    glpk.glp_scale_prob(lp);
+    glpk.glp_simplex(lp);
+    glpk.glp_intopt(lp);
+    console.log("obj: " + glpk.glp_mip_obj_val(lp));
+    for( var i = 1; i <= glpk.glp_get_num_cols(lp); i++){
+        console.log(glpk.glp_get_col_name(lp, i)  + " = " + glpk.glp_mip_col_val(lp, i));
+    }
+    glpk.glp_delete_prob(lp);
+};
+
+//console.log = function(s){
+
+//};
+
+
+require("repl").start("");
+mathprog("color.mod");
