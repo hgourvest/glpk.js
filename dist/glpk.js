@@ -1,4 +1,4 @@
-/*! glpk.js - v4.47.0 - 2012-12-23
+/*! glpk.js - v4.47.0 - 2012-12-24
 * https://github.com/hgourvest/glpk.js
 * Copyright (c) 2012 Henri Gourvest; Licensed GPLv2 */
 
@@ -29413,6 +29413,9 @@ function npp_clean_prob(npp){
         if (row.lb != -DBL_MAX && row.ub != +DBL_MAX &&
             row.lb < row.ub)
         {  ret = npp_make_equality(npp, row);
+            if (ret == 0){
+
+            } else
             if (ret == 1)
             {  /* row was replaced by equality constraint */
                 if (GLP_DEBUG){xprintf("2")}
