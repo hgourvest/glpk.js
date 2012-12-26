@@ -1,4 +1,4 @@
-/*! glpk.js - v4.47.0 - 2012-12-24
+/*! glpk.js - v4.47.0 - 2012-12-26
 * https://github.com/hgourvest/glpk.js
 * Copyright (c) 2012 Henri Gourvest; Licensed GPLv2 */
 
@@ -12787,7 +12787,7 @@ function round2n(x){
  */
 function str2num(str, callback){
     var ret = Number(str);
-    if (Number.isNaN(ret)) return 2;
+    if (isNaN(ret)) return 2;
     switch (ret){
         case Number.POSITIVE_INFINITY:
         case Number.NEGATIVE_INFINITY:
@@ -12800,7 +12800,7 @@ function str2num(str, callback){
 
 function str2int(str, callback){
     var ret = Number(str);
-    if (Number.isNaN(ret)) return 2;
+    if (isNaN(ret)) return 2;
     switch (ret){
         case Number.POSITIVE_INFINITY:
         case Number.NEGATIVE_INFINITY:
