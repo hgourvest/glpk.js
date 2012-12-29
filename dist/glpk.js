@@ -8271,8 +8271,9 @@ function ios_driver(T){
             rel_gap = "  0.0%";
         else if (temp < 0.001)
             rel_gap = " < 0.1%";
-        else if (temp <= 9.999)
-            rel_gap = 100.0 * temp;
+        else if (temp <= 9.999){
+            rel_gap = "  " + Number(100.0 * temp).toFixed(1) + "%";
+        }
         else
             rel_gap = "";
         /* display progress of the search */
