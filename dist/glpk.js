@@ -1,4 +1,4 @@
-/*! glpk.js - v4.47.0 - 2012-12-28
+/*! glpk.js - v4.47.0 - 2012-12-29
 * https://github.com/hgourvest/glpk.js
 * Copyright (c) 2012 Henri Gourvest; Licensed GPLv2 */
 
@@ -1193,14 +1193,6 @@ function delete_prob(lp){
     lp.bfcp = null;
     lp.bfd = null;
 }
-
-var glp_delete_prob = exports.glp_delete_prob = function (lp){
-    var tree = lp.tree;
-    if (tree != null && tree.reason != 0)
-        xerror("glp_delete_prob: operation not allowed");
-    delete_prob(lp);
-};
-
 var glp_get_prob_name = exports.glp_get_prob_name = function(lp){
     return lp.name;
 };
@@ -1563,23 +1555,17 @@ var glp_simplex = exports.glp_simplex = function(P, parm){
         var bfcp = {};
         var ret;
 
-        function done(){
-            /* delete the transformed LP, if it exists */
-            if (lp != null) glp_delete_prob(lp);
-            return ret;
-        }
 
         function post(){
             /* postprocess solution from the transformed LP */
             npp_postprocess(npp, lp);
             /* the transformed LP is no longer needed */
-            glp_delete_prob(lp);
             lp = null;
             /* store solution to the original problem */
             npp_unload_sol(npp, P);
             /* the original LP has been successfully solved */
             ret = 0;
-            return done()
+            return ret;
         }
 
 
@@ -1605,7 +1591,7 @@ var glp_simplex = exports.glp_simplex = function(P, parm){
         }
         else
             xassert(ret != ret);
-        if (ret != 0) return done();
+        if (ret != 0) return ret;
         /* build transformed LP */
         lp = glp_create_prob();
         npp_build_prob(npp, lp);
@@ -1665,7 +1651,7 @@ var glp_simplex = exports.glp_simplex = function(P, parm){
                 else
                     xassert(lp != lp);
             }
-            return done();
+            return ret;
         }
         return post();
     }
@@ -2130,20 +2116,13 @@ var glp_intopt = exports.glp_intopt = function(P, parm){
         var smcp = {};
         var ret;
 
-        function done(){
-            /* delete the transformed MIP, if it exists */
-            if (mip != null) glp_delete_prob(mip);
-            return ret;
-        }
-
         function post(){
             npp_postprocess(npp, mip);
             /* the transformed MIP is no longer needed */
-            glp_delete_prob(mip);
             mip = null;
             /* store solution to the original problem */
             npp_unload_sol(npp, P);
-            return done();
+            return ret;
         }
 
 
@@ -2174,7 +2153,7 @@ var glp_intopt = exports.glp_intopt = function(P, parm){
         }
         else
             xassert(ret != ret);
-        if (ret != 0) return done();
+        if (ret != 0) return ret;
         /* build transformed MIP */
         mip = glp_create_prob();
         npp_build_prob(npp, mip);
@@ -2238,7 +2217,7 @@ var glp_intopt = exports.glp_intopt = function(P, parm){
         {  if (parm.msg_lev >= GLP_MSG_ERR)
             xprintf("glp_intopt: cannot solve LP relaxation");
             ret = GLP_EFAIL;
-            return done();
+            return ret;
         }
         /* check status of the basic solution */
         ret = glp_get_status(mip);
@@ -2250,7 +2229,7 @@ var glp_intopt = exports.glp_intopt = function(P, parm){
             ret = GLP_ENODFS;
         else
             xassert(ret != ret);
-        if (ret != 0) return done();
+        if (ret != 0) return ret;
         /* solve the transformed MIP */
         mip.it_cnt = P.it_cnt;
         ret = solve_mip(mip, parm);
@@ -2258,7 +2237,7 @@ var glp_intopt = exports.glp_intopt = function(P, parm){
         /* only integer feasible solution can be postprocessed */
         if (!(mip.mip_stat == GLP_OPT || mip.mip_stat == GLP_FEAS))
         {  P.mip_stat = mip.mip_stat;
-            return done();
+            return ret;
         }
         return post();
     }
@@ -4443,11 +4422,6 @@ var glp_mpl_postsolve = exports.glp_mpl_postsolve = function(tran, prob, sol){
     else if (ret == 4)
         ret = 1;
     return ret;
-};
-
-var glp_mpl_free_wksp = exports.glp_mpl_free_wksp = function(tran){
-    /* free the MathProg translator workspace */
-    mpl_terminate(tran);
 };
 
 
@@ -11979,8 +11953,6 @@ function ios_pcost_branch(T, callback){
         {  /* the simplex solver failed */
             degrad = 0.0;
         }
-        /* delete the copy of P */
-        glp_delete_prob(lp);
         return degrad;
     }
 
@@ -12391,8 +12363,7 @@ function ios_feas_pump(T){
                 if (nfail < 3) {goto = loop; break}
                 if (npass < 5) {goto = pass; break}
             case done:
-                /* delete working objects */
-                if (lp != null) glp_delete_prob(lp);
+
 
         }
         if (goto == null) break;
@@ -13578,11 +13549,6 @@ function lpx_del_cols(lp, ncs, num){
     glp_del_cols(lp, ncs, num);
 }
 
-function lpx_delete_prob(lp){
-    /* delete problem object */
-    glp_delete_prob(lp);
-}
-
 function lpx_get_prob_name(lp){
     /* retrieve problem name */
     return glp_get_prob_name(lp);
@@ -14621,7 +14587,7 @@ function lpx_read_mps(fname){
     /* read problem data in fixed MPS format */
     var lp = lpx_create_prob();
     if (glp_read_mps(lp, GLP_MPS_DECK, null, fname)){
-        lpx_delete_prob(lp); lp = null;
+        lp = null;
     }
     return lp;
 }
@@ -14651,7 +14617,7 @@ function lpx_read_freemps(fname){
     /* read problem data in free MPS format */
     var lp = lpx_create_prob();
     if (glp_read_mps(lp, GLP_MPS_FILE, null, fname)){
-        lpx_delete_prob(lp); lp = null;
+        lp = null;
     }
     return lp;
 }
@@ -14665,7 +14631,7 @@ function lpx_read_cpxlp(fname){
     /* read problem data in CPLEX LP format */
     var lp = lpx_create_prob();
     if (glp_read_lp(lp, null, fname)){
-        lpx_delete_prob(lp); lp = null;
+        lp = null;
     }
     return lp;
 }
@@ -14691,8 +14657,6 @@ function lpx_read_model(model, data, output){
     lp = glp_create_prob();
     glp_mpl_build_prob(tran, lp);
     function done(){
-        /* free the translator workspace */
-        glp_mpl_free_wksp(tran);
         /* bring the problem object to the calling program */
         return lp;
     }
@@ -16315,7 +16279,7 @@ function mpl_internal_print_context(mpl){
         xcopyArr(mpl.context, 0, mpl.context, 1, CONTEXT_SIZE-1);
         mpl.context[CONTEXT_SIZE-1] = c;
     }
-    xprintf("Context: " + (mpl.context[0] == ' ' ? "" : "...") + mpl.context);
+    xprintf("Context: " + mpl.line + " > " +  (mpl.context[0] == ' ' ? "" : "...") + mpl.context.join('').trim());
 }
 
 function mpl_internal_get_char(mpl){
@@ -22183,25 +22147,6 @@ function mpl_internal_get_domain_tuple(mpl, domain){
     return tuple;
 }
 
-function mpl_internal_clean_domain(mpl, domain){
-    /* if no domain is specified, do nothing */
-    if (domain == null) return;
-    /* clean all domain blocks */
-    for (var block = domain.list; block != null; block = block.next)
-    {  /* clean all domain slots */
-        for (var slot = block.list; slot != null; slot = slot.next)
-        {  /* clean pseudo-code for computing bound value */
-            mpl_internal_clean_code(mpl, slot.code);
-            /* delete symbolic value assigned to dummy index */
-            slot.value = null;
-        }
-        /* clean pseudo-code for computing basic set */
-        mpl_internal_clean_code(mpl, block.code);
-    }
-    /* clean pseudo-code for computing domain predicate */
-    mpl_internal_clean_code(mpl, domain.code);
-}
-
 /**********************************************************************/
 /* * *                         MODEL SETS                         * * */
 /**********************************************************************/
@@ -22377,26 +22322,6 @@ function mpl_internal_whole_set_func(mpl, info){
 
 function mpl_internal_eval_whole_set(mpl, set){
     mpl_internal_loop_within_domain(mpl, set.domain, set, mpl_internal_whole_set_func);
-}
-
-function mpl_internal_clean_set(mpl, set){
-    var within;
-    var memb;
-    /* clean subscript domain */
-    mpl_internal_clean_domain(mpl, set.domain);
-    /* clean pseudo-code for computing supersets */
-    for (within = set.within; within != null; within = within.next)
-        mpl_internal_clean_code(mpl, within.code);
-    /* clean pseudo-code for computing assigned value */
-    mpl_internal_clean_code(mpl, set.assign);
-    /* clean pseudo-code for computing default value */
-    mpl_internal_clean_code(mpl, set.option);
-    /* reset data status flag */
-    set.data = 0;
-    /* delete content array */
-    for (memb = set.array.head; memb != null; memb = memb.next)
-        mpl_internal_delete_value(mpl, set.array.type, memb.value);
-    set.array = null;
 }
 
 /**********************************************************************/
@@ -22738,32 +22663,6 @@ function mpl_internal_eval_whole_par(mpl, par){
     mpl_internal_loop_within_domain(mpl, par.domain, par, mpl_internal_whole_par_func);
 }
 
-function mpl_internal_clean_parameter(mpl, par){
-    var cond;
-    var in_;
-    var memb;
-    /* clean subscript domain */
-    mpl_internal_clean_domain(mpl, par.domain);
-    /* clean pseudo-code for computing restricting conditions */
-    for (cond = par.cond; cond != null; cond = cond.next)
-        mpl_internal_clean_code(mpl, cond.code);
-    /* clean pseudo-code for computing restricting supersets */
-    for (in_ = par.in; in_ != null; in_ = in_.next)
-        mpl_internal_clean_code(mpl, in_.code);
-    /* clean pseudo-code for computing assigned value */
-    mpl_internal_clean_code(mpl, par.assign);
-    /* clean pseudo-code for computing default value */
-    mpl_internal_clean_code(mpl, par.option);
-    /* reset data status flag */
-    par.data = 0;
-    /* delete default symbolic value */
-    par.defval = null;
-    /* delete content array */
-    for (memb = par.array.head; memb != null; memb = memb.next)
-        mpl_internal_delete_value(mpl, par.array.type, memb.value);
-    par.array = null;
-}
-
 /**********************************************************************/
 /* * *                      MODEL VARIABLES                       * * */
 /**********************************************************************/
@@ -22834,18 +22733,6 @@ function mpl_internal_whole_var_func(mpl, var_){
 
 function mpl_internal_eval_whole_var(mpl, var_){
     mpl_internal_loop_within_domain(mpl, var_.domain, var_, mpl_internal_whole_var_func);
-}
-
-function mpl_internal_clean_variable(mpl, var_){
-    var memb;
-    /* clean subscript domain */
-    mpl_internal_clean_domain(mpl, var_.domain);
-    /* clean code for computing lower bound */
-    mpl_internal_clean_code(mpl, var_.lbnd);
-    /* clean code for computing upper bound */
-    if (var_.ubnd != var_.lbnd) mpl_internal_clean_code(mpl, var_.ubnd);
-    /* delete content array */
-    var_.array = null;
 }
 
 /**********************************************************************/
@@ -22962,19 +22849,6 @@ function mpl_internal_whole_con_func(mpl, con){
 
 function mpl_internal_eval_whole_con(mpl, con){
     mpl_internal_loop_within_domain(mpl, con.domain, con, mpl_internal_whole_con_func);
-}
-
-function mpl_internal_clean_constraint(mpl, con){
-    /* clean subscript domain */
-    mpl_internal_clean_domain(mpl, con.domain);
-    /* clean code for computing main linear form */
-    mpl_internal_clean_code(mpl, con.code);
-    /* clean code for computing lower bound */
-    mpl_internal_clean_code(mpl, con.lbnd);
-    /* clean code for computing upper bound */
-    if (con.ubnd != con.lbnd) mpl_internal_clean_code(mpl, con.ubnd);
-    /* delete content array */
-    con.array = null;
 }
 
 /**********************************************************************/
@@ -24160,144 +24034,6 @@ function mpl_internal_eval_formula(mpl, code){
     return value;
 }
 
-function mpl_internal_clean_code(mpl, code){
-    var e;
-    /* if no pseudo-code is specified, do nothing */
-    if (code == null) return;
-    /* if resultant value is valid (exists), delete it */
-    if (code.valid)
-    {   code.valid = 0;
-        mpl_internal_delete_value(mpl, code.type, code.value);
-    }
-    /* recursively clean pseudo-code for operands */
-    switch (code.op)
-    {  case O_NUMBER:
-        case O_STRING:
-        case O_INDEX:
-            break;
-        case O_MEMNUM:
-        case O_MEMSYM:
-            for (e = code.arg.par.list; e != null; e = e.next)
-                mpl_internal_clean_code(mpl, e.x);
-            break;
-        case O_MEMSET:
-            for (e = code.arg.set.list; e != null; e = e.next)
-                mpl_internal_clean_code(mpl, e.x);
-            break;
-        case O_MEMVAR:
-            for (e = code.arg.var.list; e != null; e = e.next)
-                mpl_internal_clean_code(mpl, e.x);
-            break;
-        case O_MEMCON:
-            for (e = code.arg.con.list; e != null; e = e.next)
-                mpl_internal_clean_code(mpl, e.x);
-            break;
-        case O_TUPLE:
-        case O_MAKE:
-            for (e = code.arg.list; e != null; e = e.next)
-                mpl_internal_clean_code(mpl, e.x);
-            break;
-        case O_SLICE:
-            xassert(code != code);
-        case O_IRAND224:
-        case O_UNIFORM01:
-        case O_NORMAL01:
-        case O_GMTIME:
-            break;
-        case O_CVTNUM:
-        case O_CVTSYM:
-        case O_CVTLOG:
-        case O_CVTTUP:
-        case O_CVTLFM:
-        case O_PLUS:
-        case O_MINUS:
-        case O_NOT:
-        case O_ABS:
-        case O_CEIL:
-        case O_FLOOR:
-        case O_EXP:
-        case O_LOG:
-        case O_LOG10:
-        case O_SQRT:
-        case O_SIN:
-        case O_COS:
-        case O_ATAN:
-        case O_ROUND:
-        case O_TRUNC:
-        case O_CARD:
-        case O_LENGTH:
-            /* unary operation */
-            mpl_internal_clean_code(mpl, code.arg.arg.x);
-            break;
-        case O_ADD:
-        case O_SUB:
-        case O_LESS:
-        case O_MUL:
-        case O_DIV:
-        case O_IDIV:
-        case O_MOD:
-        case O_POWER:
-        case O_ATAN2:
-        case O_ROUND2:
-        case O_TRUNC2:
-        case O_UNIFORM:
-        case O_NORMAL:
-        case O_CONCAT:
-        case O_LT:
-        case O_LE:
-        case O_EQ:
-        case O_GE:
-        case O_GT:
-        case O_NE:
-        case O_AND:
-        case O_OR:
-        case O_UNION:
-        case O_DIFF:
-        case O_SYMDIFF:
-        case O_INTER:
-        case O_CROSS:
-        case O_IN:
-        case O_NOTIN:
-        case O_WITHIN:
-        case O_NOTWITHIN:
-        case O_SUBSTR:
-        case O_STR2TIME:
-        case O_TIME2STR:
-            /* binary operation */
-            mpl_internal_clean_code(mpl, code.arg.arg.x);
-            mpl_internal_clean_code(mpl, code.arg.arg.y);
-            break;
-        case O_DOTS:
-        case O_FORK:
-        case O_SUBSTR3:
-            /* ternary operation */
-            mpl_internal_clean_code(mpl, code.arg.arg.x);
-            mpl_internal_clean_code(mpl, code.arg.arg.y);
-            mpl_internal_clean_code(mpl, code.arg.arg.z);
-            break;
-        case O_MIN:
-        case O_MAX:
-            /* n-ary operation */
-            for (e = code.arg.list; e != null; e = e.next)
-                mpl_internal_clean_code(mpl, e.x);
-            break;
-        case O_SUM:
-        case O_PROD:
-        case O_MINIMUM:
-        case O_MAXIMUM:
-        case O_FORALL:
-        case O_EXISTS:
-        case O_SETOF:
-        case O_BUILD:
-            /* iterated operation */
-            mpl_internal_clean_domain(mpl, code.arg.loop.domain);
-            mpl_internal_clean_code(mpl, code.arg.loop.x);
-            break;
-        default:
-            xassert(code.op != code.op);
-    }
-}
-
 /**********************************************************************/
 /* * *                        DATA TABLES                         * * */
 /**********************************************************************/
@@ -24565,8 +24301,6 @@ function mpl_internal_execute_table(mpl, tab){
                     }
                 }
             }
-            /* close input table */
-            mpl_tab_drv_close(mpl);
             break;
         case A_OUTPUT:
             /* write data to output table */
@@ -24590,51 +24324,11 @@ function mpl_internal_execute_table(mpl, tab){
             mpl_tab_drv_open(mpl, 'W');
             /* evaluate fields and write records */
             mpl_internal_loop_within_domain(mpl, tab.u.out.domain, tab, mpl_internal_write_func);
-            /* close output table */
-            mpl_tab_drv_close(mpl);
-            break;
-        default:
-            xassert(tab != tab);
-    }
-
-
-
-    /* free table driver communication area */
-    mpl_internal_free_dca(mpl);
-}
-
-function mpl_internal_free_dca(mpl)
-{     /* free table driver communucation area */
-    var dca = mpl.dca;
-    if (dca != null)
-    {  if (dca.link != null)
-        mpl_tab_drv_close(mpl);
-        mpl.dca = null;
-    }
-}
-
-function mpl_internal_clean_table(mpl, tab){
-    /* clean table statement */
-    var arg;
-    var out;
-    /* clean string list */
-    for (arg = tab.arg; arg != null; arg = arg.next)
-        mpl_internal_clean_code(mpl, arg.code);
-    switch (tab.type)
-    {  case A_INPUT:
-        break;
-        case A_OUTPUT:
-            /* clean subscript domain */
-            mpl_internal_clean_domain(mpl, tab.u.out.domain);
-            /* clean output list */
-            for (out = tab.u.out.list; out != null; out = out.next)
-                mpl_internal_clean_code(mpl, out.code);
             break;
         default:
             xassert(tab != tab);
     }
 }
-
 
 /**********************************************************************/
 /* * *                      MODEL STATEMENTS                      * * */
@@ -24650,13 +24344,6 @@ function mpl_internal_check_func(mpl, chk){
 function mpl_internal_execute_check(mpl, chk){
     mpl_internal_loop_within_domain(mpl, chk.domain, chk, mpl_internal_check_func);
 
-}
-
-function mpl_internal_clean_check(mpl, chk){
-    /* clean subscript domain */
-    mpl_internal_clean_domain(mpl, chk.domain);
-    /* clean pseudo-code for computing predicate */
-    mpl_internal_clean_code(mpl, chk.code);
 }
 
 function mpl_internal_display_set(mpl, set, memb){
@@ -24928,18 +24615,6 @@ function mpl_internal_execute_display(mpl, dpy){
     mpl_internal_loop_within_domain(mpl, dpy.domain, dpy, mpl_internal_display_func);
 }
 
-function mpl_internal_clean_display(mpl, dpy){
-    var d;
-    /* clean subscript domain */
-    mpl_internal_clean_domain(mpl, dpy.domain);
-    /* clean display list */
-    for (d = dpy.list; d != null; d = d.next)
-    {  /* clean pseudo-code for computing expression */
-        if (d.type == A_EXPRESSION)
-            mpl_internal_clean_code(mpl, d.u.code);
-    }
-}
-
 function mpl_internal_print_char(mpl, c){
     if (mpl.prt_fp == null)
         mpl_internal_write_char(mpl, c);
@@ -25074,21 +24749,6 @@ function mpl_internal_execute_printf(mpl, prt){
     mpl_internal_loop_within_domain(mpl, prt.domain, prt, mpl_internal_printf_func);
 }
 
-function mpl_internal_clean_printf(mpl, prt){
-    var p;
-    /* clean subscript domain */
-    mpl_internal_clean_domain(mpl, prt.domain);
-    /* clean pseudo-code for computing format string */
-    mpl_internal_clean_code(mpl, prt.fmt);
-    /* clean printf list */
-    for (p = prt.list; p != null; p = p.next)
-    {  /* clean pseudo-code for computing value to be printed */
-        mpl_internal_clean_code(mpl, p.code);
-    }
-    /* clean pseudo-code for computing file name string */
-    mpl_internal_clean_code(mpl, prt.fname);
-}
-
 function mpl_internal_for_func(mpl, fur){
     /* this is auxiliary routine to work within domain scope */
     var save = mpl.stmt;
@@ -25100,14 +24760,6 @@ function mpl_internal_for_func(mpl, fur){
 
 function mpl_internal_execute_for(mpl, fur){
     mpl_internal_loop_within_domain(mpl, fur.domain, fur, mpl_internal_for_func);
-}
-
-function mpl_internal_clean_for(mpl, fur){
-    /* clean subscript domain */
-    mpl_internal_clean_domain(mpl, fur.domain);
-    /* clean all sub-statements */
-    for (var stmt = fur.list; stmt != null; stmt = stmt.next)
-        mpl_internal_clean_statement(mpl, stmt);
 }
 
 function mpl_internal_execute_statement(mpl, stmt){
@@ -25154,34 +24806,6 @@ function mpl_internal_execute_statement(mpl, stmt){
             xassert(stmt != stmt);
     }
 }
-
-function mpl_internal_clean_statement(mpl, stmt){
-    switch(stmt.type){
-        case A_SET:
-            mpl_internal_clean_set(mpl, stmt.u.set); break;
-        case A_PARAMETER:
-            mpl_internal_clean_parameter(mpl, stmt.u.par); break;
-        case A_VARIABLE:
-            mpl_internal_clean_variable(mpl, stmt.u.var); break;
-        case A_CONSTRAINT:
-            mpl_internal_clean_constraint(mpl, stmt.u.con); break;
-        case A_TABLE:
-            mpl_internal_clean_table(mpl, stmt.u.tab); break;
-        case A_SOLVE:
-            break;
-        case A_CHECK:
-            mpl_internal_clean_check(mpl, stmt.u.chk); break;
-        case A_DISPLAY:
-            mpl_internal_clean_display(mpl, stmt.u.dpy); break;
-        case A_PRINTF:
-            mpl_internal_clean_printf(mpl, stmt.u.prt); break;
-        case A_FOR:
-            mpl_internal_clean_for(mpl, stmt.u.fur); break;
-        default:
-            xassert(stmt != stmt);
-    }
-}
-
 /* glpmpl04.c */
 
 /**********************************************************************/
@@ -25340,29 +24964,6 @@ function mpl_internal_postsolve_model(mpl){
     for (stmt = mpl.stmt; stmt != null; stmt = stmt.next)
         mpl_internal_execute_statement(mpl, stmt);
     mpl.stmt = null;
-}
-
-function mpl_internal_clean_model(mpl){
-    var stmt;
-    for (stmt = mpl.model; stmt != null; stmt = stmt.next)
-        mpl_internal_clean_statement(mpl, stmt);
-    /* check that all atoms have been returned to their pools
-     if (Object.keys(mpl.strings).length != 0)
-     error(mpl, "internal logic error: " + Object.keys(mpl.strings).length + " string segment(s) were lost");
-     if (Object.keys(mpl.symbols).length != 0)
-     error(mpl, "internal logic error: " + Object.keys(mpl.symbols).length + " symbol(s) were lost");
-     if (Object.keys(mpl.tuples).length != 0)
-     error(mpl, "internal logic error: " + Object.keys(mpl.tuples).length + " n-tuple component(s) were lost");
-     if (Object.keys(mpl.arrays).length != 0)
-     error(mpl, "internal logic error: " + Object.keys(mpl.arrays).length + " array(s) were lost");
-     if (Object.keys(mpl.members).length != 0)
-     error(mpl, "internal logic error: " + Object.keys(mpl.members).length + " array member(s) were lost");
-     if (Object.keys(mpl.elemvars).length != 0)
-     error(mpl, "internal logic error: " + Object.keys(mpl.elemvars).length + " elemental variable(s) were lost");
-     if (Object.keys(mpl.formulae).length != 0)
-     error(mpl, "internal logic error: " + Object.keys(mpl.formulae).length + " linear term(s) were lost");
-     if (Object.keys(mpl.elemcons).length != 0)
-     error(mpl, "internal logic error: " + Object.keys(mpl.elemcons).length + " elemental constraint(s) were lost");*/
 }
 
 /**********************************************************************/
@@ -25848,32 +25449,6 @@ var mpl_postsolve = exports.mpl_postsolve = function(mpl){
     /* return to the calling program */
     return mpl.phase;
 };
-
-var mpl_terminate = exports.mpl_terminate = function(mpl){
-    switch (mpl.phase)
-    {   case 0:
-        case 1:
-        case 2:
-        case 3:
-            /* there were no errors; clean the model content */
-            mpl_internal_clean_model(mpl);
-            xassert(mpl.a_list == null);
-            xassert(mpl.dca == null);
-            break;
-        case 4:
-            /* model processing has been finished due to error; delete
-             search trees, which may be created for some arrays */
-        {
-            for (var a = mpl.a_list; a != null; a = a.next)
-                if (a.tree != null) delete(a.tree);
-        }
-            mpl_internal_free_dca(mpl);
-            break;
-        default:
-            xassert(mpl != mpl);
-    }
-};
-
 /* glpmpl05.c */
 
 function mpl_internal_fn_gmtime(mpl){
