@@ -26,7 +26,7 @@
  *  along with GLPK. If not, see <http://www.gnu.org/licenses/>.
  ***********************************************************************/
 
-const
+var
     GLP_DEBUG = false,
     DBL_MAX = Number.MAX_VALUE,
     DBL_MIN = Number.MIN_VALUE,
@@ -35,7 +35,7 @@ const
     DBL_EPSILON = 0.22204460492503131E-15,
     CHAR_BIT = 1;
 
-const
+var
 /* CAUTION: DO NOT CHANGE THE LIMITS BELOW */
     M_MAX = 100000000, /* = 100*10^6 */
 /* maximal number of rows in the problem object */
@@ -46,7 +46,7 @@ const
     NNZ_MAX = 500000000; /* = 500*10^6 */
 /* maximal number of constraint coefficients in the problem object */
 
-const XEOF = -1;
+var XEOF = -1;
 
 function xerror(message){
     throw new Error(message);
@@ -4427,7 +4427,7 @@ var glp_mpl_postsolve = exports.glp_mpl_postsolve = function(tran, prob, sol){
 
 
 /* return codes: */
-const
+var
     BFD_ESING   = 1,  /* singular matrix */
     BFD_ECOND   = 2,  /* ill-conditioned matrix */
     BFD_ECHECK  = 3,  /* insufficient accuracy */
@@ -4662,11 +4662,11 @@ function check_parm(func, parm){
     xassert(parm != null);
 }
 
-const CHAR_SET = "!\"#$%&()/,.;?@_`'{}|~";
+var CHAR_SET = "!\"#$%&()/,.;?@_`'{}|~";
 /* characters, which may appear in symbolic names */
 
 var glp_read_lp = exports.glp_read_lp = function(P, parm, callback){
-    const
+    var
         T_EOF        = 0x00,  /* end of file */
         T_MINIMIZE   = 0x01,  /* keyword 'minimize' */
         T_MAXIMIZE   = 0x02,  /* keyword 'maximize' */
@@ -5668,7 +5668,7 @@ var glp_read_lp_from_string = exports.glp_read_lp_from_string = function(P, parm
 };
 
 /* return codes: */
-const
+var
     FHV_ESING   = 1,  /* singular matrix */
     FHV_ECOND   = 2,  /* ill-conditioned matrix */
     FHV_ECHECK  = 3,  /* insufficient accuracy */
@@ -8739,7 +8739,7 @@ function ios_driver(T){
      contains the only active (i.e. root) subproblem, which is the
      original MIP problem to be solved */
 
-    const
+    var
         loop = 0,
         more = 1,
         fath = 2,
@@ -8748,7 +8748,7 @@ function ios_driver(T){
     var label = loop;
 
     while (true){
-        var goto = null;
+        var go_to = null;
         switch (label){
             case loop:
                 /* main loop starts here */
@@ -8760,7 +8760,7 @@ function ios_driver(T){
                     xprintf("Active list is empty!");
                     //xassert(Object.keys(T.pool).length == 0);
                     ret = 0;
-                    goto = done; break;
+                    go_to = done; break;
                 }
                 /* select some active subproblem to continue the search */
                 xassert(T.next_p == 0);
@@ -8772,7 +8772,7 @@ function ios_driver(T){
                     T.reason = 0;
                     if (T.stop)
                     {  ret = GLP_ESTOP;
-                        goto = done; break;
+                        go_to = done; break;
                     }
                 }
                 if (T.next_p != 0)
@@ -8852,7 +8852,7 @@ function ios_driver(T){
                 {  if (T.parm.msg_lev >= GLP_MSG_DBG)
                     xprintf("Relative gap tolerance reached; search terminated ");
                     ret = GLP_EMIPGAP;
-                    goto = done; break;
+                    go_to = done; break;
                 }
                 /* check if the time limit has been exhausted */
                 if (T.parm.tm_lim < INT_MAX &&
@@ -8861,7 +8861,7 @@ function ios_driver(T){
                 {  if (T.parm.msg_lev >= GLP_MSG_DBG)
                     xprintf("Time limit exhausted; search terminated");
                     ret = GLP_ETMLIM;
-                    goto = done; break;
+                    go_to = done; break;
                 }
                 /* let the application program preprocess the subproblem */
                 if (T.parm.cb_func != null)
@@ -8871,7 +8871,7 @@ function ios_driver(T){
                     T.reason = 0;
                     if (T.stop)
                     {  ret = GLP_ESTOP;
-                        goto = done; break;
+                        go_to = done; break;
                     }
                 }
                 /* perform basic preprocessing */
@@ -8881,13 +8881,13 @@ function ios_driver(T){
                 else if (T.parm.pp_tech == GLP_PP_ROOT)
                 {  if (T.curr.level == 0)
                 {  if (ios_preprocess_node(T, 100)){
-                    goto  = fath; break;
+                    go_to  = fath; break;
                 }
                 }
                 }
                 else if (T.parm.pp_tech == GLP_PP_ALL)
                 {  if (ios_preprocess_node(T, T.curr.level == 0 ? 100 : 10)){
-                    goto = fath; break;
+                    go_to = fath; break;
                 }
                 }
                 else
@@ -8895,7 +8895,7 @@ function ios_driver(T){
                 /* preprocessing may improve the global bound */
                 if (!is_branch_hopeful(T, p))
                 {  xprintf("*** not tested yet ***");
-                    goto = fath; break;
+                    go_to = fath; break;
                 }
                 /* solve LP relaxation of the current subproblem */
                 if (T.parm.msg_lev >= GLP_MSG_DBG)
@@ -8905,7 +8905,7 @@ function ios_driver(T){
                 {  if (T.parm.msg_lev >= GLP_MSG_ERR)
                     xprintf("ios_driver: unable to solve current LP relaxation; glp_simplex returned " + ret + "");
                     ret = GLP_EFAIL;
-                    goto = done; break;
+                    go_to = done; break;
                 }
                 /* analyze status of the basic solution to LP relaxation found */
                 p_stat = T.mip.pbs_stat;
@@ -8922,7 +8922,7 @@ function ios_driver(T){
                     if (T.parm.msg_lev >= GLP_MSG_ERR)
                         xprintf("ios_driver: current LP relaxation has no dual feasible solution");
                     ret = GLP_EFAIL;
-                    goto = done; break;
+                    go_to = done; break;
                 }
                 else if (p_stat == GLP_INFEAS && d_stat == GLP_FEAS)
                 {  /* LP relaxation has no primal solution which is better than
@@ -8931,14 +8931,14 @@ function ios_driver(T){
                     if (T.parm.msg_lev >= GLP_MSG_DBG)
                         xprintf("LP relaxation has no solution better than incumbent objective value");
                     /* prune the branch */
-                    goto = fath; break;
+                    go_to = fath; break;
                 }
                 else if (p_stat == GLP_NOFEAS)
                 {  /* LP relaxation has no primal feasible solution */
                     if (T.parm.msg_lev >= GLP_MSG_DBG)
                         xprintf("LP relaxation has no feasible solution");
                     /* prune the branch */
-                    goto = fath; break;
+                    go_to = fath; break;
                 }
                 else
                 {  /* other cases cannot appear */
@@ -8974,7 +8974,7 @@ function ios_driver(T){
                 if (!is_branch_hopeful(T, p))
                 {  if (T.parm.msg_lev >= GLP_MSG_DBG)
                     xprintf("Current branch is hopeless and can be pruned");
-                    goto = fath; break;
+                    go_to = fath; break;
                 }
                 /* let the application program generate additional rows ("lazy"
                  constraints) */
@@ -8987,12 +8987,12 @@ function ios_driver(T){
                     T.reason = 0;
                     if (T.stop)
                     {  ret = GLP_ESTOP;
-                        goto = done; break;
+                        go_to = done; break;
                     }
                     if (T.reopt)
                     {  /* some rows were added; re-optimization is needed */
                         T.reopt = T.reinv = 0;
-                        goto = more; break;
+                        go_to = more; break;
                     }
                     if (T.reinv)
                     {  /* no rows were added, however, some inactive rows were
@@ -9021,12 +9021,12 @@ function ios_driver(T){
                         T.reason = 0;
                         if (T.stop)
                         {  ret = GLP_ESTOP;
-                            goto = done; break;
+                            go_to = done; break;
                         }
                     }
                     /* since the current subproblem has been fathomed, prune its
                      branch */
-                    goto = fath; break;
+                    go_to = fath; break;
                 }
                 /* at this point basic solution to LP relaxation of the current
                  subproblem is optimal, but integer infeasible */
@@ -9043,13 +9043,13 @@ function ios_driver(T){
                     T.reason = 0;
                     if (T.stop)
                     {  ret = GLP_ESTOP;
-                        goto = done; break;
+                        go_to = done; break;
                     }
                     /* check if the current branch became hopeless */
                     if (!is_branch_hopeful(T, p))
                     {  if (T.parm.msg_lev >= GLP_MSG_DBG)
                         xprintf("Current branch became hopeless and can be pruned");
-                        goto = fath; break;
+                        go_to = fath; break;
                     }
                 }
                 /* try to find solution with the feasibility pump heuristic */
@@ -9062,7 +9062,7 @@ function ios_driver(T){
                     if (!is_branch_hopeful(T, p))
                     {  if (T.parm.msg_lev >= GLP_MSG_DBG)
                         xprintf("Current branch became hopeless and can be pruned");
-                        goto = fath; break;
+                        go_to = fath; break;
                     }
                 }
                 /* it's time to generate cutting planes */
@@ -9078,7 +9078,7 @@ function ios_driver(T){
                     T.reason = 0;
                     if (T.stop)
                     {  ret = GLP_ESTOP;
-                        goto = done; break;
+                        go_to = done; break;
                     }
                 }
                 /* try to generate generic cuts with built-in generators
@@ -9106,7 +9106,7 @@ function ios_driver(T){
                 if (T.reopt)
                 {  T.reopt = 0;
                     T.curr.changed++;
-                    goto = more; break;
+                    go_to = more; break;
                 }
                 /* no cuts were generated; remove inactive cuts */
                 remove_cuts(T);
@@ -9127,7 +9127,7 @@ function ios_driver(T){
                     T.reason = 0;
                     if (T.stop)
                     {  ret = GLP_ESTOP;
-                        goto = done; break;
+                        go_to = done; break;
                     }
                 }
                 /* if nothing has been chosen, choose some variable as specified
@@ -9141,7 +9141,7 @@ function ios_driver(T){
                 if (ret == 0)
                 {  /* both branches have been created */
                     pred_p = curr_p;
-                    goto = loop; break;
+                    go_to = loop; break;
                 }
                 else if (ret == 1)
                 {  /* one branch is hopeless and has been pruned, so now the
@@ -9149,12 +9149,12 @@ function ios_driver(T){
                     /* the current subproblem should be considered as a new one,
                      since one bound of the branching variable was changed */
                     T.curr.solved = T.curr.changed = 0;
-                    goto = more; break;
+                    go_to = more; break;
                 }
                 else if (ret == 2)
                 {  /* both branches are hopeless and have been pruned; new
                  subproblem selection is needed to continue the search */
-                    goto = fath; break;
+                    go_to = fath; break;
                 }
                 else
                     xassert(ret != ret);
@@ -9171,7 +9171,7 @@ function ios_driver(T){
                 if (T.mip.mip_stat == GLP_FEAS) cleanup_the_tree(T);
                 /* new subproblem selection is needed due to backtracking */
                 pred_p = 0;
-                goto = loop; break;
+                go_to = loop; break;
             case done:
                 /* display progress of the search on exit from the solver */
                 if (T.parm.msg_lev >= GLP_MSG_ON)
@@ -9181,8 +9181,8 @@ function ios_driver(T){
                 /* return to the calling program */
                 return ret;
         }
-        if (goto == null) break;
-        label = goto;
+        if (go_to == null) break;
+        label = go_to;
     }
 }
 
@@ -9297,7 +9297,7 @@ function ios_linear_comb(x, a, y){
 
 function ios_gmi_gen(tree){
 
-    const MAXCUTS = 50;
+    var MAXCUTS = 50;
     /* maximal number of cuts to be generated for one round */
 
     function f(x) {return x - Math.floor(x)}
@@ -9513,9 +9513,9 @@ function ios_gmi_gen(tree){
 }
 
 
-const _MIR_DEBUG = 0;
+var _MIR_DEBUG = 0;
 
-const MAXAGGR = 5;
+var MAXAGGR = 5;
 /* maximal number of rows which can be aggregated */
 
 function ios_mir_init(tree){
@@ -10681,7 +10681,7 @@ function ios_mir_gen(tree, mir){
 function lpx_cover_cut(lp, len, ind, val, x){
     var alfa = null, beta = null;
 
-    const MAXTRY = 1000;
+    var MAXTRY = 1000;
 
     function cover2(n, a, b, u, x, y, cov){
         /* try to generate mixed cover cut using two-element cover */
@@ -10995,8 +10995,8 @@ function ios_cov_gen(tree){
 
 
 function lpx_create_cog(lp){
-    const MAX_NB = 4000;
-    const MAX_ROW_LEN = 500;
+    var MAX_NB = 4000;
+    var MAX_ROW_LEN = 500;
 
     function get_row_lb(lp, i){
         /* this routine returns lower bound of row i or -DBL_MAX if the
@@ -12087,7 +12087,7 @@ function ios_feas_pump(T){
     var j, k, new_x, nfail, npass, nv, ret, stalling;
     var dist, tol;
 
-    const
+    var
         start = 0,
         more = 1,
         pass = 2,
@@ -12098,12 +12098,12 @@ function ios_feas_pump(T){
     var label = start;
 
     while (true){
-        var goto = null;
+        var go_to = null;
         switch (label){
             case start:
                 xassert(glp_get_status(P) == GLP_OPT);
                 /* this heuristic is applied only once on the root level */
-                if (!(T.curr.level == 0 && T.curr.solved == 1)){goto = done; break}
+                if (!(T.curr.level == 0 && T.curr.solved == 1)){go_to = done; break}
                 /* determine number of binary variables */
                 nv = 0;
                 for (j = 1; j <= n; j++)
@@ -12123,14 +12123,14 @@ function ios_feas_pump(T){
                         if (T.parm.msg_lev >= GLP_MSG_ALL)
                             xprintf("FPUMP heuristic cannot be applied due to genera"+
                                 "l integer variables");
-                        goto = done;
+                        go_to = done;
                         break;
                     }
                 }
-                if (goto != null) break;
+                if (go_to != null) break;
 
                 /* there must be at least one binary variable */
-                if (nv == 0) {goto = done; break}
+                if (nv == 0) {go_to = done; break}
                 if (T.parm.msg_lev >= GLP_MSG_ALL)
                     xprintf("Applying FPUMP heuristic...");
                 /* build the list of binary variables */
@@ -12206,7 +12206,7 @@ function ios_feas_pump(T){
                         temp = Math.abs(var_[k].x - col.prim);
                         if (temp + rho > 0.5) var_[k].x = 1 - var_[k].x;
                     }
-                    goto = skip;
+                    go_to = skip;
                     break;
                 }
             case loop:
@@ -12258,7 +12258,7 @@ function ios_feas_pump(T){
                 /* check if the time limit has been exhausted */
                 if (T.parm.tm_lim < INT_MAX &&
                     (T.parm.tm_lim - 1) <=
-                        1000.0 * xdifftime(xtime(), T.tm_beg)) {goto = done; break}
+                        1000.0 * xdifftime(xtime(), T.tm_beg)) {go_to = done; break}
                 /* build the objective, which is the distance between the current
                  (basic) point and the rounded one */
                 lp.dir = GLP_MIN;
@@ -12286,13 +12286,13 @@ function ios_feas_pump(T){
                 if (ret != 0)
                 {  if (T.parm.msg_lev >= GLP_MSG_ERR)
                     xprintf("Warning: glp_simplex returned " + ret + "");
-                    goto = done; break;
+                    go_to = done; break;
                 }
                 ret = glp_get_status(lp);
                 if (ret != GLP_OPT)
                 {  if (T.parm.msg_lev >= GLP_MSG_ERR)
                     xprintf("Warning: glp_get_status returned " + ret + "");
-                    goto = done; break;
+                    go_to = done; break;
                 }
                 if (T.parm.msg_lev >= GLP_MSG_DBG)
                     xprintf("delta = " + lp.obj_val + "");
@@ -12327,13 +12327,13 @@ function ios_feas_pump(T){
                     if (ret != 0)
                     {  if (T.parm.msg_lev >= GLP_MSG_ERR)
                         xprintf("Warning: glp_simplex returned " + ret + "");
-                        goto = done; break;
+                        go_to = done; break;
                     }
                     ret = glp_get_status(lp);
                     if (ret != GLP_OPT)
                     {  if (T.parm.msg_lev >= GLP_MSG_ERR)
                         xprintf("Warning: glp_get_status returned " + ret + "");
-                        goto = done; break;
+                        go_to = done; break;
                     }
                     for (j = 1; j <= n; j++)
                         if (P.col[j].kind != GLP_IV) x[j] = lp.col[j].prim;
@@ -12342,12 +12342,12 @@ function ios_feas_pump(T){
                     {  /* the integer solution is accepted */
                         if (ios_is_hopeful(T, T.curr.bound))
                         {  /* it is reasonable to apply the heuristic once again */
-                            goto = more; break;
+                            go_to = more; break;
                         }
                         else
                         {  /* the best known integer feasible solution just found
                          is close to optimal solution to LP relaxation */
-                            goto = done; break;
+                            go_to = done; break;
                         }
                     }
                 }
@@ -12361,14 +12361,14 @@ function ios_feas_pump(T){
                 {  /* improving the distance failed */
                     nfail++;
                 }
-                if (nfail < 3) {goto = loop; break}
-                if (npass < 5) {goto = pass; break}
+                if (nfail < 3) {go_to = loop; break}
+                if (npass < 5) {go_to = pass; break}
             case done:
 
 
         }
-        if (goto == null) break;
-        label = goto;
+        if (go_to == null) break;
+        label = go_to;
     }
 }
 
@@ -12637,7 +12637,7 @@ function ios_choose_node(T){
 }
 
 /* library version numbers: */
-const
+var
     GLP_MAJOR_VERSION = exports.GLP_MAJOR_VERSION = 4,
     GLP_MINOR_VERSION = exports.GLP_MINOR_VERSION = 47,
 
@@ -13016,13 +13016,13 @@ function jdate(j, callback)
 }
 
 /* return codes: */
-const
+var
     LPF_ESING    = 1;  /* singular matrix */
     LPF_ECOND    = 2;  /* ill-conditioned matrix */
     LPF_ELIMIT   = 3;  /* update limit reached */
 
 
-const _GLPLPF_DEBUG = 0;
+var _GLPLPF_DEBUG = 0;
 
 function lpf_create_it(){
     var lpf;
@@ -14702,7 +14702,7 @@ function lpx_main(argc, argv)
 }
 
 /* return codes: */
-const
+var
     LUF_ESING   = 1,  /* singular matrix */
     LUF_ECOND   = 2;  /* ill-conditioned matrix */
 
@@ -16030,10 +16030,10 @@ function luf_a_solve(luf, tr, x){
     }
 }
 
-const
+var
     MPL_EOF = -1;
 
-const
+var
     A_BINARY       = 101,   /* something binary */
     A_CHECK        = 102,   /* check statement */
     A_CONSTRAINT   = 103,   /* model constraint */
@@ -16062,19 +16062,19 @@ const
     A_TUPLE        = 126,   /* n-tuple */
     A_VARIABLE     = 127;   /* model variable */
 
-const
+var
     MAX_LENGTH = 100;
 /* maximal length of any symbolic value (this includes symbolic names,
  numeric and string literals, and all symbolic values that may appear
  during the evaluation phase) */
 
-const CONTEXT_SIZE = 60;
+var CONTEXT_SIZE = 60;
 /* size of the context queue, in characters */
 
-const OUTBUF_SIZE = 1024;
+var OUTBUF_SIZE = 1024;
 /* size of the output buffer, in characters */
 
-const
+var
     T_EOF          = 201,   /* end of file */
     T_NAME         = 202,   /* symbolic name (model section only) */
     T_SYMBOL       = 203,   /* symbol (data section only) */
@@ -16129,7 +16129,7 @@ const
     T_INPUT        = 252;   /* <- */
 
             /* suffix specified: */
-const
+var
     DOT_NONE       = 0x00,  /* none     (means variable itself) */
     DOT_LB         = 0x01,  /* .lb      (lower bound) */
     DOT_UB         = 0x02,  /* .ub      (upper bound) */
@@ -16138,7 +16138,7 @@ const
     DOT_DUAL       = 0x05;  /* .dual    (dual value) */
 
         /* operation code: */
-const
+var
     O_NUMBER       = 301,   /* take floating-point number */
     O_STRING       = 302,   /* take character string */
     O_INDEX        = 303,   /* take dummy index */
@@ -16233,7 +16233,7 @@ const
     /**********************************************************************/
     /* * *                      SOLVER INTERFACE                      * * */
     /**********************************************************************/
-const
+var
     MPL_FR         = 401,   /* free (unbounded) */
     MPL_LO         = 402,   /* lower bound */
     MPL_UP         = 403,   /* upper bound */
@@ -16247,7 +16247,7 @@ const
     MPL_BIN        = 423;   /* binary */
 
 function mpl_internal_create_operands(){
-    return {index: {},par: {},set: {},var: {},con: {},arg: {},loop: {}};
+    return {index: {},par: {},set: {},var_: {},con: {},arg: {},loop: {}};
 }
 /* glpmpl01.c */
 
@@ -16741,15 +16741,15 @@ function mpl_internal_make_code(mpl, op, arg, type, dim){
             code.arg.set.list = arg.set.list;
             break;
         case O_MEMVAR:
-            for (e = arg.var.list; e != null; e = e.next)
+            for (e = arg.var_.list; e != null; e = e.next)
             {  xassert(e.x != null);
                 xassert(e.x.up == null);
                 e.x.up = code;
                 code.vflag |= e.x.vflag;
             }
-            code.arg.var.var = arg.var.var;
-            code.arg.var.list = arg.var.list;
-            code.arg.var.suff = arg.var.suff;
+            code.arg.var_.var_ = arg.var_.var_;
+            code.arg.var_.list = arg.var_.list;
+            code.arg.var_.suff = arg.var_.suff;
             break;
         case O_MEMCON:
             for (e = arg.con.list; e != null; e = e.next)
@@ -17155,9 +17155,9 @@ function mpl_internal_object_reference(mpl){
             if (!mpl.flag_s && (suff == DOT_STATUS || suff == DOT_VAL
                 || suff == DOT_DUAL))
                 mpl_internal_error(mpl, "invalid reference to status, primal value, or dual value of variable " + var_.name + " above solve statement");
-            arg.var.var = var_;
-            arg.var.list = list;
-            arg.var.suff = suff;
+            arg.var_.var_ = var_;
+            arg.var_.list = list;
+            arg.var_.suff = suff;
             code = mpl_internal_make_code(mpl, O_MEMVAR, arg, suff == DOT_NONE ?
                 A_FORMULA : A_NUMERIC, 0);
             break;
@@ -17488,7 +17488,7 @@ function mpl_internal_append_slot(mpl, block, name, code){
 function mpl_internal_expression_list(mpl){
     var code;
     var arg = mpl_internal_create_operands();
-    const max_dim = 20;
+    var max_dim = 20;
     /* maximal number of components allowed within parentheses */
     var list = new Array(max_dim + 1);
     xfillObjArr(list, 0, max_dim + 1);
@@ -18855,7 +18855,7 @@ function mpl_internal_parameter_statement(mpl){
     par.domain = null;
     par.type = A_NUMERIC;
     par.cond = null;
-    par.in = null;
+    par.in_ = null;
     par.assign = null;
     par.option = null;
     par.data = 0;
@@ -18910,7 +18910,7 @@ function mpl_internal_parameter_statement(mpl){
             /* the parameter may be referenced from expressions given
              in the same parameter declaration, so its type must be
              completed before parsing that expressions */
-            if (!(par.cond == null && par.in == null &&
+            if (!(par.cond == null && par.in_ == null &&
                 par.assign == null && par.option == null))
                 mpl_internal_error(mpl, "keyword symbolic must precede any other parameter attributes");
             par.type = A_SYMBOLIC;
@@ -18980,10 +18980,10 @@ function mpl_internal_parameter_statement(mpl){
             in_ = {};
             in_.code = null;
             in_.next = null;
-            if (par.in == null)
-                par.in = in_;
+            if (par.in_ == null)
+                par.in_ = in_;
             else
-            {  for (temp = par.in; temp.next != null; temp = temp.next){}
+            {  for (temp = par.in_; temp.next != null; temp = temp.next){}
                 temp.next = in_;
             }
             /* parse an expression that follows 'in' */
@@ -19496,7 +19496,7 @@ function mpl_internal_table_statement(mpl){
     if (mpl.tree[mpl.image] != null)
         mpl_internal_error(mpl, mpl.image + " multiply declared");
     /* create data table */
-    var tab = {u: {in: {}, out: {}}};
+    var tab = {u: {in_: {}, out: {}}};
     tab.name = mpl.image;
     mpl_internal_get_token(mpl /* <symbolic name> */);
     /* parse optional alias */
@@ -19569,10 +19569,10 @@ function mpl_internal_table_statement(mpl){
                 mpl_internal_error(mpl, mpl.image + " not defined");
             if (node.type != A_SET)
                 mpl_internal_error(mpl, mpl.image + " not a set");
-            tab.u.in.set = node.link;
-            if (tab.u.in.set.assign != null)
+            tab.u.in_.set = node.link;
+            if (tab.u.in_.set.assign != null)
                 mpl_internal_error(mpl, mpl.image + " needs no data");
-            if (tab.u.in.set.dim != 0)
+            if (tab.u.in_.set.dim != 0)
                 mpl_internal_error(mpl, mpl.image + " must be a simple set");
             mpl_internal_get_token(mpl /* <symbolic name> */);
             if (mpl.token == T_INPUT)
@@ -19583,9 +19583,9 @@ function mpl_internal_table_statement(mpl){
         else if (mpl_internal_is_reserved(mpl))
             mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
         else
-            tab.u.in.set = null;
+            tab.u.in_.set = null;
         /* parse field list */
-        tab.u.in.fld = last_fld = null;
+        tab.u.in_.fld = last_fld = null;
         nflds = 0;
         if (mpl.token == T_LBRACKET)
             mpl_internal_get_token(mpl /* [ */);
@@ -19608,7 +19608,7 @@ function mpl_internal_table_statement(mpl){
             /* add the entry to the end of the list */
             fld.next = null;
             if (last_fld == null)
-                tab.u.in.fld = fld;
+                tab.u.in_.fld = fld;
             else
                 last_fld.next = fld;
             last_fld = fld;
@@ -19622,12 +19622,12 @@ function mpl_internal_table_statement(mpl){
                 mpl_internal_error(mpl, "syntax error in field list");
         }
         /* check that the set dimen is equal to the number of fields */
-        if (tab.u.in.set != null && tab.u.in.set.dimen != nflds)
-            mpl_internal_error(mpl, "there must be " + tab.u.in.set.dimen + " field" +
-                (tab.u.in.set.dimen == 1 ? "" : "s") + " rather than " + nflds);
+        if (tab.u.in_.set != null && tab.u.in_.set.dimen != nflds)
+            mpl_internal_error(mpl, "there must be " + tab.u.in_.set.dimen + " field" +
+                (tab.u.in_.set.dimen == 1 ? "" : "s") + " rather than " + nflds);
         mpl_internal_get_token(mpl /* ] */);
         /* parse optional input list */
-        tab.u.in.list = last_in = null;
+        tab.u.in_.list = last_in = null;
         while (mpl.token == T_COMMA)
         {  mpl_internal_get_token(mpl /* , */);
             /* create input list entry */
@@ -19676,7 +19676,7 @@ function mpl_internal_table_statement(mpl){
             /* add the entry to the end of the list */
             in_.next = null;
             if (last_in == null)
-                tab.u.in.list = in_;
+                tab.u.in_.list = in_;
             else
                 last_in.next = in_;
             last_in = in_;
@@ -19846,9 +19846,9 @@ function mpl_internal_display_statement(mpl){
                         entry.u.par = node.link;
                         break;
                     case A_VARIABLE:
-                        entry.u.var = node.link;
+                        entry.u.var_ = node.link;
                         if (!mpl.flag_s)
-                            mpl_internal_error(mpl, "invalid reference to variable " + entry.u.var.name +  " above solve statement");
+                            mpl_internal_error(mpl, "invalid reference to variable " + entry.u.var_.name +  " above solve statement");
                         break;
                     case A_CONSTRAINT:
                         entry.u.con = node.link;
@@ -20024,7 +20024,7 @@ function mpl_internal_simple_statement(mpl, spec){
     {  if (spec)
         mpl_internal_error(mpl, "variable statement not allowed here");
         stmt.type = A_VARIABLE;
-        stmt.u.var = mpl_internal_variable_statement(mpl);
+        stmt.u.var_ = mpl_internal_variable_statement(mpl);
     }
     else if (mpl_internal_is_keyword(mpl, "subject") ||
         mpl_internal_is_keyword(mpl, "subj") ||
@@ -21145,13 +21145,13 @@ function mpl_internal_fp_trunc(mpl, x, n)
 
 function mpl_internal_fp_irand224(mpl)
 {
-    const two_to_the_24 = 0x1000000;
+    var two_to_the_24 = 0x1000000;
     return rng_unif_rand(mpl.rand, two_to_the_24);
 }
 
 function mpl_internal_fp_uniform01(mpl)
 {
-    const two_to_the_31 = 0x80000000;
+    var two_to_the_31 = 0x80000000;
     return rng_next_rand(mpl.rand) / two_to_the_31;
 }
 
@@ -21585,7 +21585,7 @@ function mpl_internal_constant_term(mpl, coef){
     else
     {   form = {};
         form.coef = coef;
-        form.var = null;
+        form.var_ = null;
         form.next = null;
     }
     return form;
@@ -21595,7 +21595,7 @@ function mpl_internal_single_variable(mpl, var_){
     xassert(var_ != null);
     var form = {};
     form.coef = 1.0;
-    form.var = var_;
+    form.var_ = var_;
     form.next = null;
     return form;
 }
@@ -21608,7 +21608,7 @@ function mpl_internal_copy_formula(mpl, form){
     {  head = tail = {};
         for (; form != null; form = form.next)
         {  tail.coef = form.coef;
-            tail.var = form.var;
+            tail.var_ = form.var_;
             if (form.next != null)
                 tail = tail.next = {};
         }
@@ -21621,38 +21621,38 @@ function mpl_internal_linear_comb(mpl, a, fx, b, fy){
     var form = null, term, temp;
     var c0 = 0.0;
     for (term = fx; term != null; term = term.next)
-    {  if (term.var == null)
+    {  if (term.var_ == null)
         c0 = mpl_internal_fp_add(mpl, c0, mpl_internal_fp_mul(mpl, a, term.coef));
     else
-        term.var.temp =
-            mpl_internal_fp_add(mpl, term.var.temp, mpl_internal_fp_mul(mpl, a, term.coef));
+        term.var_.temp =
+            mpl_internal_fp_add(mpl, term.var_.temp, mpl_internal_fp_mul(mpl, a, term.coef));
     }
     for (term = fy; term != null; term = term.next)
-    {  if (term.var == null)
+    {  if (term.var_ == null)
         c0 = mpl_internal_fp_add(mpl, c0, mpl_internal_fp_mul(mpl, b, term.coef));
     else
-        term.var.temp =
-            mpl_internal_fp_add(mpl, term.var.temp, mpl_internal_fp_mul(mpl, b, term.coef));
+        term.var_.temp =
+            mpl_internal_fp_add(mpl, term.var_.temp, mpl_internal_fp_mul(mpl, b, term.coef));
     }
     for (term = fx; term != null; term = term.next)
-    {  if (term.var != null && term.var.temp != 0.0)
+    {  if (term.var_ != null && term.var_.temp != 0.0)
     {  temp = {};
-        temp.coef = term.var.temp; temp.var = term.var;
+        temp.coef = term.var_.temp; temp.var_ = term.var_;
         temp.next = form; form = temp;
-        term.var.temp = 0.0;
+        term.var_.temp = 0.0;
     }
     }
     for (term = fy; term != null; term = term.next)
-    {  if (term.var != null && term.var.temp != 0.0)
+    {  if (term.var_ != null && term.var_.temp != 0.0)
     {  temp = {};
-        temp.coef = term.var.temp; temp.var = term.var;
+        temp.coef = term.var_.temp; temp.var_ = term.var_;
         temp.next = form; form = temp;
-        term.var.temp = 0.0;
+        term.var_.temp = 0.0;
     }
     }
     if (c0 != 0.0)
     {  temp = {};
-        temp.coef = c0; temp.var = null;
+        temp.coef = c0; temp.var_ = null;
         temp.next = form; form = temp;
     }
     return form;
@@ -21664,7 +21664,7 @@ function mpl_internal_remove_constant(mpl, form, callback){
     while (form != null)
     {  temp = form;
         form = form.next;
-        if (temp.var == null)
+        if (temp.var_ == null)
         {  /* constant term */
             coef = mpl_internal_fp_add(mpl, coef, temp.coef);
         }
@@ -21682,20 +21682,20 @@ function mpl_internal_reduce_terms(mpl, form){
     var term, next_term;
     var c0 = 0.0;
     for (term = form; term != null; term = term.next)
-    {  if (term.var == null)
+    {  if (term.var_ == null)
         c0 = mpl_internal_fp_add(mpl, c0, term.coef);
     else
-        term.var.temp = mpl_internal_fp_add(mpl, term.var.temp, term.coef);
+        term.var_.temp = mpl_internal_fp_add(mpl, term.var_.temp, term.coef);
     }
     next_term = form; form = null;
     for (term = next_term; term != null; term = next_term)
     {  next_term = term.next;
-        if (term.var == null && c0 != 0.0)
+        if (term.var_ == null && c0 != 0.0)
         {  term.coef = c0; c0 = 0.0;
             term.next = form; form = term;
         }
-        else if (term.var != null && term.var.temp != 0.0)
-        {  term.coef = term.var.temp; term.var.temp = 0.0;
+        else if (term.var_ != null && term.var_.temp != 0.0)
+        {  term.coef = term.var_.temp; term.var_.temp = 0.0;
             term.next = form; form = term;
         }
     }
@@ -21728,7 +21728,7 @@ function mpl_internal_delete_value(mpl, type, value){
             value.set = null;
             break;
         case A_ELEMVAR:
-            value.var = null;
+            value.var_ = null;
             break;
         case A_FORMULA:
             value.form = null;
@@ -22385,7 +22385,7 @@ function mpl_internal_check_value_num(mpl, par, tuple, value){
     }
     /* the value must be in_ all specified supersets */
     eqno = 1;
-    for (var in_ = par.in; in_ != null; in_ = in_.next, eqno++)
+    for (var in_ = par.in_; in_ != null; in_ = in_.next, eqno++)
     {
         xassert(in_.code != null);
         xassert(in_.code.dim == 1);
@@ -22549,7 +22549,7 @@ function mpl_internal_check_value_sym(mpl, par, tuple, value){
     }
     /* the value must be in all specified supersets */
     eqno = 1;
-    for (in_ = par.in; in_ != null; in_ = in_.next, eqno++)
+    for (in_ = par.in_; in_ != null; in_ = in_.next, eqno++)
     {
         xassert(in_.code != null);
         xassert(in_.code.dim == 1);
@@ -22676,16 +22676,16 @@ function mpl_internal_take_member_var(mpl, var_, tuple){
     var memb = mpl_internal_find_member(mpl, var_.array, tuple);
     if (memb != null)
     {  /* member exists, so just take the reference */
-        refer = memb.value.var;
+        refer = memb.value.var_;
     }
     else
     {  /* member is referenced for the first time and therefore does
      not exist; create new elemental variable, assign it to new
      member, and add the member to the variable array */
         memb = mpl_internal_add_member(mpl, var_.array, mpl_internal_copy_tuple(mpl, tuple));
-        refer = memb.value.var = {};
+        refer = memb.value.var_ = {};
         refer.j = 0;
-        refer.var = var_;
+        refer.var_ = var_;
         refer.memb = memb;
         /* compute lower bound */
         if (var_.lbnd == null)
@@ -22711,17 +22711,17 @@ function mpl_internal_take_member_var(mpl, var_, tuple){
 function mpl_internal_eval_var_func(mpl, info)
 {
     /* this is auxiliary routine to work within domain scope */
-    info.refer = mpl_internal_take_member_var(mpl, info.var, info.tuple);
+    info.refer = mpl_internal_take_member_var(mpl, info.var_, info.tuple);
 }
 
 function mpl_internal_eval_member_var(mpl, var_, tuple){
     /* this routine evaluates variable member */
     var info = {};
     xassert(var_.dim == mpl_internal_tuple_dimen(mpl, tuple));
-    info.var = var_;
+    info.var_ = var_;
     info.tuple = tuple;
     /* evaluate member, which has given n-tuple */
-    if (mpl_internal_eval_within_domain(mpl, info.var.domain, info.tuple, info, mpl_internal_eval_var_func))
+    if (mpl_internal_eval_within_domain(mpl, info.var_.domain, info.tuple, info, mpl_internal_eval_var_func))
         mpl_internal_out_of_domain(mpl, var_.name, info.tuple);
     /* bring evaluated reference to the calling program */
     return info.refer;
@@ -22921,19 +22921,19 @@ function mpl_internal_eval_numeric(mpl, code){
         {
             var var_;
             tuple = null;
-            for (e = code.arg.var.list; e != null; e = e.next)
+            for (e = code.arg.var_.list; e != null; e = e.next)
                 tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_eval_symbolic(mpl,
                     e.x));
-            var_ = mpl_internal_eval_member_var(mpl, code.arg.var.var, tuple);
-            switch (code.arg.var.suff)
+            var_ = mpl_internal_eval_member_var(mpl, code.arg.var_.var_, tuple);
+            switch (code.arg.var_.suff)
             {  case DOT_LB:
-                if (var_.var.lbnd == null)
+                if (var_.var_.lbnd == null)
                     value = -DBL_MAX;
                 else
                     value = var_.lbnd;
                 break;
                 case DOT_UB:
-                    if (var_.var.ubnd == null)
+                    if (var_.var_.ubnd == null)
                         value = +DBL_MAX;
                     else
                         value = var_.ubnd;
@@ -23943,12 +23943,12 @@ function mpl_internal_eval_formula(mpl, code){
     {
         var e;
         var tuple = null;
-        for (e = code.arg.var.list; e != null; e = e.next)
+        for (e = code.arg.var_.list; e != null; e = e.next)
             tuple = mpl_internal_expand_tuple(mpl, tuple, mpl_internal_eval_symbolic(mpl,
                 e.x));
-        xassert(code.arg.var.suff == DOT_NONE);
+        xassert(code.arg.var_.suff == DOT_NONE);
         value = mpl_internal_single_variable(mpl,
-            mpl_internal_eval_member_var(mpl, code.arg.var.var, tuple));
+            mpl_internal_eval_member_var(mpl, code.arg.var_.var_, tuple));
     }
         break;
         case O_CVTLFM:
@@ -24187,7 +24187,7 @@ function mpl_internal_execute_table(mpl, tab){
             /* read data from input table */
             /* add the only member to the control set and assign it empty
              elemental set */
-            set = tab.u.in.set;
+            set = tab.u.in_.set;
             if (set != null)
             {  if (set.data)
                 mpl_internal_error(mpl, set.name + " already provided with data");
@@ -24197,30 +24197,30 @@ function mpl_internal_execute_table(mpl, tab){
                 set.data = 1;
             }
             /* check parameters specified in the input list */
-            for (in_ = tab.u.in.list; in_ != null; in_ = in_.next)
+            for (in_ = tab.u.in_.list; in_ != null; in_ = in_.next)
             {  if (in_.par.data)
                 mpl_internal_error(mpl, in_.par.name + " already provided with data");
                 in_.par.data = 1;
             }
             /* allocate and initialize fields */
             xassert(dca.nf == 0);
-            for (fld = tab.u.in.fld; fld != null; fld = fld.next)
+            for (fld = tab.u.in_.fld; fld != null; fld = fld.next)
                 dca.nf++;
-            for (in_ = tab.u.in.list; in_ != null; in_ = in_.next)
+            for (in_ = tab.u.in_.list; in_ != null; in_ = in_.next)
                 dca.nf++;
             dca.name = new Array(1+dca.nf);
             dca.type = new Array(1+dca.nf);
             dca.num = new Array(1+dca.nf);
             dca.str = new Array(1+dca.nf);
             k = 0;
-            for (fld = tab.u.in.fld; fld != null; fld = fld.next)
+            for (fld = tab.u.in_.fld; fld != null; fld = fld.next)
             {   k++;
                 dca.name[k] = fld.name;
                 dca.type[k] = '?';
                 dca.num[k] = 0.0;
                 dca.str[k] = '';
             }
-            for (in_ = tab.u.in.list; in_ != null; in_ = in_.next)
+            for (in_ = tab.u.in_.list; in_ != null; in_ = in_.next)
             {   k++;
                 dca.name[k] = in_.name;
                 dca.type[k] = '?';
@@ -24245,7 +24245,7 @@ function mpl_internal_execute_table(mpl, tab){
                 /* construct n-tuple */
                 tup = null;
                 k = 0;
-                for (fld = tab.u.in.fld; fld != null; fld = fld.next)
+                for (fld = tab.u.in_.fld; fld != null; fld = fld.next)
                 {  k++;
                     xassert(k <= dca.nf);
                     switch (dca.type[k])
@@ -24262,11 +24262,11 @@ function mpl_internal_execute_table(mpl, tab){
                     }
                 }
                 /* add n-tuple just read to the control set */
-                if (tab.u.in.set != null)
-                    mpl_internal_check_then_add(mpl, tab.u.in.set.array.head.value.set,
+                if (tab.u.in_.set != null)
+                    mpl_internal_check_then_add(mpl, tab.u.in_.set.array.head.value.set,
                         mpl_internal_copy_tuple(mpl, tup));
                 /* assign values to the parameters in the input list */
-                for (in_ = tab.u.in.list; in_ != null; in_ = in_.next)
+                for (in_ = tab.u.in_.list; in_ != null; in_ = in_.next)
                 {   var memb;
                     k++;
                     xassert(k <= dca.nf);
@@ -24378,19 +24378,19 @@ function mpl_internal_display_var(mpl, var_, memb, suff){
     /* display member of model variable */
     if (suff == DOT_NONE || suff == DOT_VAL)
         mpl_internal_write_text(mpl, var_.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".val = " +
-            memb.value.var.prim);
+            memb.value.var_.prim);
     else if (suff == DOT_LB)
         mpl_internal_write_text(mpl, var_.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".lb = " +
-            (memb.value.var.var.lbnd == null ? -DBL_MAX : memb.value.var.lbnd));
+            (memb.value.var_.var_.lbnd == null ? -DBL_MAX : memb.value.var_.lbnd));
     else if (suff == DOT_UB)
         mpl_internal_write_text(mpl, var_.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".ub = " +
-            (memb.value.var.var.ubnd == null ? +DBL_MAX : memb.value.var.ubnd));
+            (memb.value.var_.var_.ubnd == null ? +DBL_MAX : memb.value.var_.ubnd));
     else if (suff == DOT_STATUS)
         mpl_internal_write_text(mpl, var_.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".status = " +
-            memb.value.var.stat);
+            memb.value.var_.stat);
     else if (suff == DOT_DUAL)
         mpl_internal_write_text(mpl, var_.name + mpl_internal_format_tuple(mpl, '[', memb.tuple) + ".dual = " +
-            memb.value.var.dual);
+            memb.value.var_.dual);
     else
         xassert(suff != suff);
 }
@@ -24444,10 +24444,10 @@ function mpl_internal_display_memb(mpl, code){
             mpl_internal_display_set(mpl, code.arg.set.set, memb);
             break;
         case O_MEMVAR:
-            memb.value.var = mpl_internal_eval_member_var(mpl, code.arg.var.var,
+            memb.value.var_ = mpl_internal_eval_member_var(mpl, code.arg.var_.var_,
                 memb.tuple);
             mpl_internal_display_var
-                (mpl, code.arg.var.var, memb, code.arg.var.suff);
+                (mpl, code.arg.var_.var_, memb, code.arg.var_.suff);
             break;
         case O_MEMCON:
             memb.value.con = mpl_internal_eval_member_con(mpl, code.arg.con.con,
@@ -24507,10 +24507,10 @@ function mpl_internal_display_code(mpl, code){
             if (form == null)
                 mpl_internal_write_text(mpl, "linear form is empty");
             for (term = form; term != null; term = term.next)
-            {  if (term.var == null)
+            {  if (term.var_ == null)
                 mpl_internal_write_text(mpl, "   " + term.coef);
             else
-                mpl_internal_write_text(mpl, "   " + term.coef + " " + term.var.var.name + mpl_internal_format_tuple(mpl, '[', term.var.memb.tuple));
+                mpl_internal_write_text(mpl, "   " + term.coef + " " + term.var_.var_.name + mpl_internal_format_tuple(mpl, '[', term.var_.memb.tuple));
             }
         }
             break;
@@ -24580,7 +24580,7 @@ function mpl_internal_display_func(mpl, dpy){
     }
     else if (entry.type == A_VARIABLE)
     {  /* model variable */
-        var var_ = entry.u.var;
+        var var_ = entry.u.var_;
         xassert(mpl.flag_p);
         /* display all members of the variable array */
         if (var_.array.head == null)
@@ -24846,9 +24846,9 @@ function mpl_internal_alloc_content(mpl){
             break;
         case A_VARIABLE:
             /* model variable */
-            xassert(stmt.u.var.array == null);
-            stmt.u.var.array = mpl_internal_create_array(mpl, A_ELEMVAR,
-                stmt.u.var.dim);
+            xassert(stmt.u.var_.array == null);
+            stmt.u.var_.array = mpl_internal_create_array(mpl, A_ELEMVAR,
+                stmt.u.var_.dim);
             break;
         case A_CONSTRAINT:
             /* model constraint/objective */
@@ -24896,9 +24896,9 @@ function mpl_internal_build_problem(mpl){
     /* check that all elemental variables has zero column numbers */
     for (stmt = mpl.model; stmt != null; stmt = stmt.next)
     {  if (stmt.type == A_VARIABLE)
-    {  v = stmt.u.var;
+    {  v = stmt.u.var_;
         for (memb = v.array.head; memb != null; memb = memb.next)
-            xassert(memb.value.var.j == 0);
+            xassert(memb.value.var_.j == 0);
     }
     }
     /* assign row numbers to elemental constraints and objectives */
@@ -24911,8 +24911,8 @@ function mpl_internal_build_problem(mpl){
             /* walk through linear form and mark elemental variables,
              which are referenced at least once */
             for (t = memb.value.con.form; t != null; t = t.next)
-            {  xassert(t.var != null);
-                t.var.memb.value.var.j = -1;
+            {  xassert(t.var_ != null);
+                t.var_.memb.value.var_.j = -1;
             }
         }
     }
@@ -24920,9 +24920,9 @@ function mpl_internal_build_problem(mpl){
     /* assign column numbers to marked elemental variables */
     for (stmt = mpl.model; stmt != null; stmt = stmt.next)
     {  if (stmt.type == A_VARIABLE)
-    {  v = stmt.u.var;
+    {  v = stmt.u.var_;
         for (memb = v.array.head; memb != null; memb = memb.next)
-            if (memb.value.var.j != 0) memb.value.var.j =
+            if (memb.value.var_.j != 0) memb.value.var_.j =
                 ++mpl.n;
     }
     }
@@ -24946,13 +24946,13 @@ function mpl_internal_build_problem(mpl){
     for (j = 1; j <= mpl.n; j++) mpl.col[j] = null;
     for (stmt = mpl.model; stmt != null; stmt = stmt.next)
     {  if (stmt.type == A_VARIABLE)
-    {  v = stmt.u.var;
+    {  v = stmt.u.var_;
         for (memb = v.array.head; memb != null; memb = memb.next)
-        {  j = memb.value.var.j;
+        {  j = memb.value.var_.j;
             if (j == 0) continue;
             xassert(1 <= j && j <= mpl.n);
             xassert(mpl.col[j] == null);
-            mpl.col[j] = memb.value.var;
+            mpl.col[j] = memb.value.var_;
         }
     }
     }
@@ -25332,10 +25332,10 @@ var mpl_get_mat_row = exports.mpl_get_mat_row = function(mpl, i, ndx, val){
     if (!(1 <= i && i <= mpl.m))
         xerror("mpl_get_mat_row: i = " + i + "; row number out of range");
     for (term = mpl.row[i].form; term != null; term = term.next)
-    {  xassert(term.var != null);
+    {  xassert(term.var_ != null);
         len++;
         xassert(len <= mpl.n);
-        if (ndx != null) ndx[len] = term.var.j;
+        if (ndx != null) ndx[len] = term.var_.j;
         if (val != null) val[len] = term.coef;
     }
     return len;
@@ -25361,7 +25361,7 @@ var mpl_get_col_name = exports.mpl_get_col_name = function(mpl, j){
         xerror("mpl_get_col_name: invalid call sequence");
     if (!(1 <= j && j <= mpl.n))
         xerror("mpl_get_col_name: j = " + j + "; column number out of range");
-    var name = mpl.col[j].var.name;
+    var name = mpl.col[j].var_.name;
     var len = name.length;
     xassert(len <= 255);
     name += mpl_internal_format_tuple(mpl, '[', mpl.col[j].memb.tuple);
@@ -25376,7 +25376,7 @@ var mpl_get_col_kind = exports.mpl_get_col_kind = function(mpl, j){
         xerror("mpl_get_col_kind: invalid call sequence");
     if (!(1 <= j && j <= mpl.n))
         xerror("mpl_get_col_kind: j = " + j + "; column number out of range");
-    switch (mpl.col[j].var.type)
+    switch (mpl.col[j].var_.type)
     {  case A_NUMERIC:
         kind = MPL_NUM; break;
         case A_INTEGER:
@@ -25398,8 +25398,8 @@ var mpl_get_col_bnds = exports.mpl_get_col_bnds = function(mpl, j, callback){
     if (!(1 <= j && j <= mpl.n))
         xerror("mpl_get_col_bnds: j = " + j + "; column number out of range");
     var_ = mpl.col[j];
-    lb = (var_.var.lbnd == null ? -DBL_MAX : var_.lbnd);
-    ub = (var_.var.ubnd == null ? +DBL_MAX : var_.ubnd);
+    lb = (var_.var_.lbnd == null ? -DBL_MAX : var_.lbnd);
+    ub = (var_.var_.ubnd == null ? +DBL_MAX : var_.ubnd);
     if (lb == -DBL_MAX && ub == +DBL_MAX){
         type = MPL_FR; lb = ub = 0.0;
     }
@@ -25409,7 +25409,7 @@ var mpl_get_col_bnds = exports.mpl_get_col_bnds = function(mpl, j, callback){
     else if (lb == -DBL_MAX){
         type = MPL_UP; lb = 0.0;
     }
-    else if (var_.var.lbnd != var_.var.ubnd)
+    else if (var_.var_.lbnd != var_.var_.ubnd)
         type = MPL_DB;
     else
         type = MPL_FX;
@@ -25459,8 +25459,8 @@ function mpl_internal_fn_gmtime(mpl){
     return Math.round(Date.now() / 1000);
 }
 
-const mpl_internal_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const mpl_internal_moon = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+var mpl_internal_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+var mpl_internal_moon = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 function mpl_internal_mulstr(v, n){
     var ret = '';
@@ -29732,7 +29732,7 @@ function rng_next_rand(rand){
 }
 
 function rng_unif_rand(rand, m){
-    const two_to_the_31 = 0x80000000;
+    var two_to_the_31 = 0x80000000;
     var t = two_to_the_31 - (two_to_the_31 % m);
     var r;
     xassert(m > 0);
@@ -29755,18 +29755,18 @@ function rng_uniform(rand, a, b){
     return x;
 }
 
-const
+var
     SCF_TBG     = 1,  /* Bartels-Golub elimination */
     SCF_TGR     = 2;  /* Givens plane rotation */
 
 /* return codes: */
-const
+var
     SCF_ESING    = 1,  /* singular matrix */
     SCF_ELIMIT   = 2;  /* update limit reached */
 
-const _GLPSCF_DEBUG = 0;
+var _GLPSCF_DEBUG = 0;
 
-const SCF_EPS = 1e-10;
+var SCF_EPS = 1e-10;
 
 function scf_create_it(n_max){
     if (_GLPSCF_DEBUG){
@@ -30332,7 +30332,7 @@ var glp_scale_prob = exports.glp_scale_prob = function(lp, flags){
 
 function spx_primal(lp, parm){
 
-    const kappa = 0.10;
+    var kappa = 0.10;
 
     function alloc_csa(lp){
         var m = lp.m;
@@ -32388,12 +32388,12 @@ function spx_primal(lp, parm){
     }
 
     /* return to the calling program */
-    return ret;
+    //return ret;
 }
 
 function spx_dual(lp, parm){
 
-    const kappa = 0.10;
+    var kappa = 0.10;
 
     function alloc_csa(lp){
         var m = lp.m;
