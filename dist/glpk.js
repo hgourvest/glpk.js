@@ -1,4 +1,4 @@
-/*! glpk.js - v4.47.0 - 2012-12-29
+/*! glpk.js - v4.47.0 - 2012-12-30
 * https://github.com/hgourvest/glpk.js
 * Copyright (c) 2012 Henri Gourvest; Licensed GPLv2 */
 
@@ -5603,7 +5603,7 @@ var glp_write_lp = exports.glp_write_lp = function(P, parm, callback){
             callback("Bounds"); flag = 1; count++;
         }
 
-        callback(" 0 <= ~r_" + i + " <= " + row.ub - row.lb); count++;
+        callback(" 0 <= ~r_" + i + " <= " + (row.ub - row.lb)); count++;
     }
     for (j = 1; j <= P.n; j++)
     {  col = P.col[j];
@@ -16585,6 +16585,8 @@ function mpl_internal_get_token(mpl){
                 mpl.token = T_NUMBER; mpl_internal_append_char(mpl);
                 while (isdigit(mpl.c)) mpl_internal_append_char(mpl);
                 scanDecimal();
+                /* convert numeric literal to floating-point */
+                if (str2num(mpl.image, function(v){mpl.value = v})) err();
             }
         }
         else if (mpl.c == ','){
