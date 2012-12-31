@@ -1,33 +1,16 @@
-/*! glpk.js - v4.47.0 - 2012-12-30
+/*! glpk.js - v4.47.0
 * https://github.com/hgourvest/glpk.js
 * Copyright (c) 2012 Henri Gourvest; Licensed GPLv2 */
-
 (function(exports) {
+var GLP_DEBUG = true;
 
-/***********************************************************************
- *  This code is part of GLPK (GNU Linear Programming Kit).
- *
- *  Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
- *  2009, 2010, 2011 Andrew Makhorin, Department for Applied Informatics,
- *  Moscow Aviation Institute, Moscow, Russia. All rights reserved.
- *  E-mail: <mao@gnu.org>.
- *
- *  GLPK is free software: you can redistribute it and/or modify it
- *  under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  GLPK is distributed in the hope that it will be useful, but WITHOUT
- *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- *  or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
- *  License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with GLPK. If not, see <http://www.gnu.org/licenses/>.
- ***********************************************************************/
+function xassert(test){
+    if (!test){
+        throw new Error('assert');
+    }
+}
 
 var
-    GLP_DEBUG = false,
     DBL_MAX = Number.MAX_VALUE,
     DBL_MIN = Number.MIN_VALUE,
     DBL_DIG = 16,
@@ -50,12 +33,6 @@ var XEOF = -1;
 
 function xerror(message){
     throw new Error(message);
-}
-
-function xassert(test){
-    if (!test){
-        throw new Error('assert');
-    }
 }
 
 var xprintf = function(data){
@@ -104,7 +81,7 @@ function get_env_ptr(){
     return global_env;
 }
 
-var glp_version = exports.glp_version = function(){
+var glp_version = exports["glp_version"] = function(){
     return GLP_MAJOR_VERSION + "." + GLP_MINOR_VERSION;
 };
 
@@ -333,6 +310,7 @@ function sprintf () {
 
 var
     GLP_PROB_MAGIC = 0xD7D9D6C2;
+
 function create_prob(lp){
     lp.magic = GLP_PROB_MAGIC;
     //lp.pool = dmp_create_pool();
@@ -369,27 +347,27 @@ function create_prob(lp){
     lp.mip_obj = 0.0;
 }
 
-var glp_create_prob = exports.glp_create_prob = function(){
+var glp_create_prob = exports["glp_create_prob"] = function(){
     var lp = {};
     create_prob(lp);
     return lp;
 };
 
-var glp_set_prob_name = exports.glp_set_prob_name = function(lp, name){
+var glp_set_prob_name = exports["glp_set_prob_name"] = function(lp, name){
     var tree = lp.tree;
     if (tree != null && tree.reason != 0)
         xerror("glp_set_prob_name: operation not allowed");
     lp.name = name;
 };
 
-var glp_set_obj_name = exports.glp_set_obj_name = function(lp, name){
+var glp_set_obj_name = exports["glp_set_obj_name"] = function(lp, name){
     var tree = lp.tree;
     if (tree != null && tree.reason != 0)
         xerror("glp_set_obj_name: operation not allowed");
     lp.obj = name;
 };
 
-var glp_set_obj_dir = exports.glp_set_obj_dir = function(lp, dir){
+var glp_set_obj_dir = exports["glp_set_obj_dir"] = function(lp, dir){
     var tree = lp.tree;
     if (tree != null && tree.reason != 0)
         xerror("glp_set_obj_dir: operation not allowed");
@@ -398,7 +376,7 @@ var glp_set_obj_dir = exports.glp_set_obj_dir = function(lp, dir){
     lp.dir = dir;
 };
 
-var glp_add_rows = exports.glp_add_rows = function (lp, nrs){
+var glp_add_rows = exports["glp_add_rows"] = function (lp, nrs){
     var tree = lp.tree;
     var row;
     /* determine new number of rows */
@@ -465,7 +443,7 @@ var glp_add_rows = exports.glp_add_rows = function (lp, nrs){
     return m_new - nrs + 1;
 };
 
-var glp_add_cols = exports.glp_add_cols = function(lp, ncs){
+var glp_add_cols = exports["glp_add_cols"] = function(lp, ncs){
     var tree = lp.tree;
     var col;
     if (tree != null && tree.reason != 0)
@@ -510,7 +488,7 @@ var glp_add_cols = exports.glp_add_cols = function(lp, ncs){
     return n_new - ncs + 1;
 };
 
-var glp_set_row_name = exports.glp_set_row_name = function(lp, i, name)
+var glp_set_row_name = exports["glp_set_row_name"] = function(lp, i, name)
 {
     var tree = lp.tree;
     if (!(1 <= i && i <= lp.m))
@@ -530,7 +508,7 @@ var glp_set_row_name = exports.glp_set_row_name = function(lp, i, name)
     }
 };
 
-var glp_set_col_name = exports.glp_set_col_name = function(lp, j, name){
+var glp_set_col_name = exports["glp_set_col_name"] = function(lp, j, name){
     var tree = lp.tree;
     if (tree != null && tree.reason != 0)
         xerror("glp_set_col_name: operation not allowed");
@@ -549,7 +527,7 @@ var glp_set_col_name = exports.glp_set_col_name = function(lp, j, name){
     }
 };
 
-var glp_set_row_bnds = exports.glp_set_row_bnds = function(lp, i, type, lb, ub){
+var glp_set_row_bnds = exports["glp_set_row_bnds"] = function(lp, i, type, lb, ub){
     if (!(1 <= i && i <= lp.m))
         xerror("glp_set_row_bnds: i = " + i + "; row number out of range");
     var row = lp.row[i];
@@ -582,7 +560,7 @@ var glp_set_row_bnds = exports.glp_set_row_bnds = function(lp, i, type, lb, ub){
     }
 };
 
-var glp_set_col_bnds = exports.glp_set_col_bnds = function(lp, j, type, lb, ub){
+var glp_set_col_bnds = exports["glp_set_col_bnds"] = function(lp, j, type, lb, ub){
     if (!(1 <= j && j <= lp.n))
         xerror("glp_set_col_bnds: j = " + j + "; column number out of range");
     var col = lp.col[j];
@@ -615,7 +593,7 @@ var glp_set_col_bnds = exports.glp_set_col_bnds = function(lp, j, type, lb, ub){
     }
 };
 
-var glp_set_obj_coef = exports.glp_set_obj_coef = function(lp, j, coef){
+var glp_set_obj_coef = exports["glp_set_obj_coef"] = function(lp, j, coef){
     var tree = lp.tree;
     if (tree != null && tree.reason != 0)
         xerror("glp_set_obj_coef: operation not allowed");
@@ -627,7 +605,7 @@ var glp_set_obj_coef = exports.glp_set_obj_coef = function(lp, j, coef){
         lp.col[j].coef = coef;
 };
 
-var glp_set_mat_row = exports.glp_set_mat_row = function(lp, i, len, ind, val){
+var glp_set_mat_row = exports["glp_set_mat_row"] = function(lp, i, len, ind, val){
     var tree = lp.tree;
     var col, aij, next, j, k;
     /* obtain pointer to i-th row */
@@ -714,7 +692,7 @@ var glp_set_mat_row = exports.glp_set_mat_row = function(lp, i, len, ind, val){
     }
 };
 
-var glp_set_mat_col = exports.glp_set_mat_col = function(lp, j, len, ind, val){
+var glp_set_mat_col = exports["glp_set_mat_col"] = function(lp, j, len, ind, val){
     var tree = lp.tree;
     var row, aij, next;
     var i, k;
@@ -796,7 +774,7 @@ var glp_set_mat_col = exports.glp_set_mat_col = function(lp, j, len, ind, val){
     if (col.stat == GLP_BS) lp.valid = 0;
 };
 
-var glp_load_matrix = exports.glp_load_matrix = function(lp, ne, ia, ja, ar){
+var glp_load_matrix = exports["glp_load_matrix"] = function(lp, ne, ia, ja, ar){
     var tree = lp.tree;
     var row, col, aij, next;
     var i, j, k;
@@ -891,7 +869,7 @@ var glp_load_matrix = exports.glp_load_matrix = function(lp, ne, ia, ja, ar){
     lp.valid = 0;
 };
 
-var glp_check_dup = exports.glp_check_dup = function(m, n, ne, ia, ja){
+var glp_check_dup = exports["glp_check_dup"] = function(m, n, ne, ia, ja){
     var i, j, k, ptr, next, ret;
     var flag;
     if (m < 0)
@@ -957,7 +935,7 @@ var glp_check_dup = exports.glp_check_dup = function(m, n, ne, ia, ja){
     return ret;
 };
 
-var glp_sort_matrix = exports.glp_sort_matrix = function(P){
+var glp_sort_matrix = exports["glp_sort_matrix"] = function(P){
     var aij;
     var i, j;
     if (P == null || P.magic != GLP_PROB_MAGIC)
@@ -988,7 +966,7 @@ var glp_sort_matrix = exports.glp_sort_matrix = function(P){
     }
 };
 
-var glp_del_rows = exports.glp_del_rows = function(lp, nrs, num){
+var glp_del_rows = exports["glp_del_rows"] = function(lp, nrs, num){
     var tree = lp.tree;
     var row;
     var i, k, m_new;
@@ -1042,7 +1020,7 @@ var glp_del_rows = exports.glp_del_rows = function(lp, nrs, num){
     lp.valid = 0;
 };
 
-var glp_del_cols = exports.glp_del_cols = function(lp, ncs, num){
+var glp_del_cols = exports["glp_del_cols"] = function(lp, ncs, num){
     var tree = lp.tree;
     var col;
     var j, k, n_new;
@@ -1100,7 +1078,7 @@ var glp_del_cols = exports.glp_del_cols = function(lp, ncs, num){
     }
 };
 
-var glp_copy_prob = exports.glp_copy_prob = function(dest, prob, names){
+var glp_copy_prob = exports["glp_copy_prob"] = function(dest, prob, names){
     var tree = dest.tree;
     var bfcp = {};
     var i, j, len, ind;
@@ -1173,7 +1151,7 @@ var glp_copy_prob = exports.glp_copy_prob = function(dest, prob, names){
     }
 };
 
-var glp_erase_prob = exports.glp_erase_prob = function(lp){
+var glp_erase_prob = exports["glp_erase_prob"] = function(lp){
     var tree = lp.tree;
     if (tree != null && tree.reason != 0)
         xerror("glp_erase_prob: operation not allowed");
@@ -1193,45 +1171,46 @@ function delete_prob(lp){
     lp.bfcp = null;
     lp.bfd = null;
 }
-var glp_get_prob_name = exports.glp_get_prob_name = function(lp){
+
+var glp_get_prob_name = exports["glp_get_prob_name"] = function(lp){
     return lp.name;
 };
 
-var glp_get_obj_name = exports.glp_get_obj_name = function(lp){
+var glp_get_obj_name = exports["glp_get_obj_name"] = function(lp){
     return lp.obj;
 };
 
-var glp_get_obj_dir = exports.glp_get_obj_dir = function(lp){
+var glp_get_obj_dir = exports["glp_get_obj_dir"] = function(lp){
     return lp.dir;
 };
 
-var glp_get_num_rows = exports.glp_get_num_rows = function(lp){
+var glp_get_num_rows = exports["glp_get_num_rows"] = function(lp){
     return lp.m;
 };
 
-var glp_get_num_cols = exports.glp_get_num_cols = function(lp){
+var glp_get_num_cols = exports["glp_get_num_cols"] = function(lp){
     return lp.n;
 };
 
-var glp_get_row_name = exports.glp_get_row_name = function(lp, i){
+var glp_get_row_name = exports["glp_get_row_name"] = function(lp, i){
     if (!(1 <= i && i <= lp.m))
         xerror("glp_get_row_name: i = " + i + "; row number out of range");
     return lp.row[i].name;
 };
 
-var glp_get_col_name = exports.glp_get_col_name = function(lp, j){
+var glp_get_col_name = exports["glp_get_col_name"] = function(lp, j){
     if (!(1 <= j && j <= lp.n))
         xerror("glp_get_col_name: j = " + j + "; column number out of range");
     return lp.col[j].name;
 };
 
-var glp_get_row_type = exports.glp_get_row_type = function(lp, i){
+var glp_get_row_type = exports["glp_get_row_type"] = function(lp, i){
     if (!(1 <= i && i <= lp.m))
         xerror("glp_get_row_type: i = " + i + "; row number out of range");
     return lp.row[i].type;
 };
 
-var glp_get_row_lb = exports.glp_get_row_lb = function(lp, i){
+var glp_get_row_lb = exports["glp_get_row_lb"] = function(lp, i){
     var lb;
     if (!(1 <= i && i <= lp.m))
         xerror("glp_get_row_lb: i = " + i + "; row number out of range");
@@ -1249,7 +1228,7 @@ var glp_get_row_lb = exports.glp_get_row_lb = function(lp, i){
     return lb;
 };
 
-var glp_get_row_ub = exports.glp_get_row_ub = function(lp, i){
+var glp_get_row_ub = exports["glp_get_row_ub"] = function(lp, i){
     var ub;
     if (!(1 <= i && i <= lp.m))
         xerror("glp_get_row_ub: i = " + i + "; row number out of range");
@@ -1267,13 +1246,13 @@ var glp_get_row_ub = exports.glp_get_row_ub = function(lp, i){
     return ub;
 };
 
-var glp_get_col_type = exports.glp_get_col_type = function(lp, j)
+var glp_get_col_type = exports["glp_get_col_type"] = function(lp, j)
 {     if (!(1 <= j && j <= lp.n))
     xerror("glp_get_col_type: j = " + j + "; column number out of range");
     return lp.col[j].type;
 };
 
-var glp_get_col_lb = exports.glp_get_col_lb = function(lp, j){
+var glp_get_col_lb = exports["glp_get_col_lb"] = function(lp, j){
     var lb;
     if (!(1 <= j && j <= lp.n))
         xerror("glp_get_col_lb: j = " + j + "; column number out of range");
@@ -1291,7 +1270,7 @@ var glp_get_col_lb = exports.glp_get_col_lb = function(lp, j){
     return lb;
 };
 
-var glp_get_col_ub = exports.glp_get_col_ub = function(lp, j){
+var glp_get_col_ub = exports["glp_get_col_ub"] = function(lp, j){
     var ub;
     if (!(1 <= j && j <= lp.n))
         xerror("glp_get_col_ub: j = " + j + "; column number out of range");
@@ -1309,17 +1288,17 @@ var glp_get_col_ub = exports.glp_get_col_ub = function(lp, j){
     return ub;
 };
 
-var glp_get_obj_coef = exports.glp_get_obj_coef = function(lp, j){
+var glp_get_obj_coef = exports["glp_get_obj_coef"] = function(lp, j){
     if (!(0 <= j && j <= lp.n))
         xerror("glp_get_obj_coef: j = " + j + "; column number out of range");
     return j == 0 ? lp.c0 : lp.col[j].coef;
 };
 
-var glp_get_num_nz = exports.glp_get_num_nz = function (lp){
+var glp_get_num_nz = exports["glp_get_num_nz"] = function (lp){
     return lp.nnz;
 };
 
-var glp_get_mat_row = exports.glp_get_mat_row = function(lp, i, ind, val){
+var glp_get_mat_row = exports["glp_get_mat_row"] = function(lp, i, ind, val){
     var aij;
     var len;
     if (!(1 <= i && i <= lp.m))
@@ -1334,7 +1313,7 @@ var glp_get_mat_row = exports.glp_get_mat_row = function(lp, i, ind, val){
     return len;
 };
 
-var glp_get_mat_col = exports.glp_get_mat_col = function(lp, j, ind, val){
+var glp_get_mat_col = exports["glp_get_mat_col"] = function(lp, j, ind, val){
     var aij;
     var len;
     if (!(1 <= j && j <= lp.n))
@@ -1349,7 +1328,7 @@ var glp_get_mat_col = exports.glp_get_mat_col = function(lp, j, ind, val){
     return len;
 };
 
-var glp_create_index = exports.glp_create_index = function(lp){
+var glp_create_index = exports["glp_create_index"] = function(lp){
     var row;
     var col;
     var i, j;
@@ -1375,7 +1354,7 @@ var glp_create_index = exports.glp_create_index = function(lp){
     }
 };
 
-var glp_find_row = exports.glp_find_row = function(lp, name){
+var glp_find_row = exports["glp_find_row"] = function(lp, name){
     var i = 0;
     if (lp.r_tree == null)
         xerror("glp_find_row: row name index does not exist");
@@ -1384,7 +1363,7 @@ var glp_find_row = exports.glp_find_row = function(lp, name){
     return i;
 };
 
-var glp_find_col = exports.glp_find_col = function(lp, name){
+var glp_find_col = exports["glp_find_col"] = function(lp, name){
     var j = 0;
     if (lp.c_tree == null)
         xerror("glp_find_col: column name index does not exist");
@@ -1393,11 +1372,12 @@ var glp_find_col = exports.glp_find_col = function(lp, name){
     return j;
 };
 
-var glp_delete_index = exports.glp_delete_index = function(lp){
+var glp_delete_index = exports["glp_delete_index"] = function(lp){
     lp.r_tree = null;
     lp.r_tree = null;
 };
-var glp_set_rii = exports.glp_set_rii = function(lp, i, rii){
+
+var glp_set_rii = exports["glp_set_rii"] = function(lp, i, rii){
     if (!(1 <= i && i <= lp.m))
         xerror("glp_set_rii: i = " + i + "; row number out of range");
     if (rii <= 0.0)
@@ -1414,7 +1394,7 @@ var glp_set_rii = exports.glp_set_rii = function(lp, i, rii){
     lp.row[i].rii = rii;
 };
 
-var glp_set_sjj = exports.glp_set_sjj = function(lp, j, sjj){
+var glp_set_sjj = exports["glp_set_sjj"] = function(lp, j, sjj){
     if (!(1 <= j && j <= lp.n))
         xerror("glp_set_sjj: j = " + j + "; column number out of range");
     if (sjj <= 0.0)
@@ -1426,26 +1406,27 @@ var glp_set_sjj = exports.glp_set_sjj = function(lp, j, sjj){
     lp.col[j].sjj = sjj;
 };
 
-var glp_get_rii = exports.glp_get_rii = function(lp, i){
+var glp_get_rii = exports["glp_get_rii"] = function(lp, i){
     if (!(1 <= i && i <= lp.m))
         xerror("glp_get_rii: i = " + i + "; row number out of range");
     return lp.row[i].rii;
 };
 
-var glp_get_sjj = exports.glp_get_sjj = function(lp, j){
+var glp_get_sjj = exports["glp_get_sjj"] = function(lp, j){
     if (!(1 <= j && j <= lp.n))
         xerror("glp_get_sjj: j = " + j + "; column number out of range");
     return lp.col[j].sjj;
 };
 
-var glp_unscale_prob = exports.glp_unscale_prob = function(lp){
+var glp_unscale_prob = exports["glp_unscale_prob"] = function(lp){
     var m = glp_get_num_rows(lp);
     var n = glp_get_num_cols(lp);
     var i, j;
     for (i = 1; i <= m; i++) glp_set_rii(lp, i, 1.0);
     for (j = 1; j <= n; j++) glp_set_sjj(lp, j, 1.0);
 };
-var glp_set_row_stat = exports.glp_set_row_stat = function(lp, i, stat){
+
+var glp_set_row_stat = exports["glp_set_row_stat"] = function(lp, i, stat){
     var row;
     if (!(1 <= i && i <= lp.m))
         xerror("glp_set_row_stat: i = " + i + "; row number out of range");
@@ -1469,7 +1450,7 @@ var glp_set_row_stat = exports.glp_set_row_stat = function(lp, i, stat){
     row.stat = stat;
 };
 
-var glp_set_col_stat = exports.glp_set_col_stat = function(lp, j, stat){
+var glp_set_col_stat = exports["glp_set_col_stat"] = function(lp, j, stat){
     var col;
     if (!(1 <= j && j <= lp.n))
         xerror("glp_set_col_stat: j = " + j + "; column number out of range");
@@ -1493,7 +1474,7 @@ var glp_set_col_stat = exports.glp_set_col_stat = function(lp, j, stat){
     col.stat = stat;
 };
 
-var glp_std_basis = exports.glp_std_basis = function(lp){
+var glp_std_basis = exports["glp_std_basis"] = function(lp){
     var i, j;
     /* make all auxiliary variables basic */
     for (i = 1; i <= lp.m; i++)
@@ -1508,7 +1489,7 @@ var glp_std_basis = exports.glp_std_basis = function(lp){
     }
 };
 
-var glp_simplex = exports.glp_simplex = function(P, parm){
+var glp_simplex = exports["glp_simplex"] = function(P, parm){
 
     function solve_lp(P, parm){
         /* solve LP directly without using the preprocessor */
@@ -1868,7 +1849,7 @@ var glp_simplex = exports.glp_simplex = function(P, parm){
  *  Default values of the control parameters are stored in a glp_smcp
  *  structure, which the parameter parm points to. */
 
-var glp_init_smcp = exports.glp_init_smcp = function(parm){
+var glp_init_smcp = exports["glp_init_smcp"] = function(parm){
     parm.msg_lev = GLP_MSG_ALL;
     parm.meth = GLP_PRIMAL;
     parm.pricing = GLP_PT_PSE;
@@ -1906,7 +1887,7 @@ var glp_init_smcp = exports.glp_init_smcp = function(parm){
  *  GLP_UNBND  - problem has unbounded solution;
  *  GLP_UNDEF  - solution is undefined. */
 
-var glp_get_status = exports.glp_get_status = function(lp){
+var glp_get_status = exports["glp_get_status"] = function(lp){
     var status;
     status = glp_get_prim_stat(lp);
     switch (status)
@@ -1937,61 +1918,62 @@ var glp_get_status = exports.glp_get_status = function(lp){
     return status;
 };
 
-var glp_get_prim_stat = exports.glp_get_prim_stat = function(lp){
+var glp_get_prim_stat = exports["glp_get_prim_stat"] = function(lp){
     return lp.pbs_stat;
 };
 
-var glp_get_dual_stat = exports.glp_get_dual_stat = function(lp){
+var glp_get_dual_stat = exports["glp_get_dual_stat"] = function(lp){
     return lp.dbs_stat;
 };
 
-var glp_get_obj_val = exports.glp_get_obj_val = function(lp){
+var glp_get_obj_val = exports["glp_get_obj_val"] = function(lp){
     return lp.obj_val;
 };
 
-var glp_get_row_stat = exports.glp_get_row_stat = function(lp, i){
+var glp_get_row_stat = exports["glp_get_row_stat"] = function(lp, i){
     if (!(1 <= i && i <= lp.m))
         xerror("glp_get_row_stat: i = " + i + "; row number out of range");
     return lp.row[i].stat;
 };
 
-var glp_get_row_prim = exports.glp_get_row_prim = function(lp, i){
+var glp_get_row_prim = exports["glp_get_row_prim"] = function(lp, i){
     if (!(1 <= i && i <= lp.m))
         xerror("glp_get_row_prim: i = " + i + "; row number out of range");
     return lp.row[i].prim;
 };
 
-var glp_get_row_dual = exports.glp_get_row_dual = function(lp, i){
+var glp_get_row_dual = exports["glp_get_row_dual"] = function(lp, i){
     if (!(1 <= i && i <= lp.m))
         xerror("glp_get_row_dual: i = " + i + "; row number out of range");
     return lp.row[i].dual;
 };
 
-var glp_get_col_stat = exports.glp_get_col_stat = function(lp, j){
+var glp_get_col_stat = exports["glp_get_col_stat"] = function(lp, j){
     if (!(1 <= j && j <= lp.n))
         xerror("glp_get_col_stat: j = " + j + "; column number out of range");
     return lp.col[j].stat;
 };
 
-var glp_get_col_prim = exports.glp_get_col_prim = function(lp, j){
+var glp_get_col_prim = exports["glp_get_col_prim"] = function(lp, j){
     if (!(1 <= j && j <= lp.n))
         xerror("glp_get_col_prim: j = " + j + "; column number out of range");
     return lp.col[j].prim;
 };
 
-var glp_get_col_dual = exports.glp_get_col_dual = function(lp, j){
+var glp_get_col_dual = exports["glp_get_col_dual"] = function(lp, j){
     if (!(1 <= j && j <= lp.n))
         xerror("glp_get_col_dual: j = " + j + "; column number out of range");
     return lp.col[j].dual;
 };
 
-var glp_get_unbnd_ray = exports.glp_get_unbnd_ray = function(lp){
+var glp_get_unbnd_ray = exports["glp_get_unbnd_ray"] = function(lp){
     var k = lp.some;
     xassert(k >= 0);
     if (k > lp.m + lp.n) k = 0;
     return k;
 }
-var glp_set_col_kind = exports.glp_set_col_kind = function(mip, j, kind){
+
+var glp_set_col_kind = exports["glp_set_col_kind"] = function(mip, j, kind){
     if (!(1 <= j && j <= mip.n))
         xerror("glp_set_col_kind: j = " + j + "; column number out of range");
     var col = mip.col[j];
@@ -2012,7 +1994,7 @@ var glp_set_col_kind = exports.glp_set_col_kind = function(mip, j, kind){
     }
 };
 
-var glp_get_col_kind = exports.glp_get_col_kind = function(mip, j){
+var glp_get_col_kind = exports["glp_get_col_kind"] = function(mip, j){
     if (!(1 <= j && j <= mip.n))
         xerror("glp_get_col_kind: j = " + j + "; column number out of range");
     var col = mip.col[j];
@@ -2030,7 +2012,7 @@ var glp_get_col_kind = exports.glp_get_col_kind = function(mip, j){
     return kind;
 };
 
-var glp_get_num_int = exports.glp_get_num_int = function(mip){
+var glp_get_num_int = exports["glp_get_num_int"] = function(mip){
     var col;
     var count = 0;
     for (var j = 1; j <= mip.n; j++)
@@ -2040,7 +2022,7 @@ var glp_get_num_int = exports.glp_get_num_int = function(mip){
     return count;
 };
 
-var glp_get_num_bin = exports.glp_get_num_bin = function(mip){
+var glp_get_num_bin = exports["glp_get_num_bin"] = function(mip){
     var col;
     var count = 0;
     for (var j = 1; j <= mip.n; j++)
@@ -2051,7 +2033,7 @@ var glp_get_num_bin = exports.glp_get_num_bin = function(mip){
     return count;
 };
 
-var glp_intopt = exports.glp_intopt = function(P, parm){
+var glp_intopt = exports["glp_intopt"] = function(P, parm){
     function solve_mip(P, parm){
         /* solve MIP directly without using the preprocessor */
         var T;
@@ -2381,7 +2363,7 @@ var glp_intopt = exports.glp_intopt = function(P, parm){
     return ret;
 };
 
-var glp_init_iocp = exports.glp_init_iocp = function(parm){
+var glp_init_iocp = exports["glp_init_iocp"] = function(parm){
     parm.msg_lev = GLP_MSG_ALL;
     parm.br_tech = GLP_BR_DTH;
     parm.bt_tech = GLP_BT_BLB;
@@ -2404,21 +2386,21 @@ var glp_init_iocp = exports.glp_init_iocp = function(parm){
     parm.fp_heur = GLP_OFF;
 };
 
-var glp_mip_status = exports.glp_mip_status = function(mip){
+var glp_mip_status = exports["glp_mip_status"] = function(mip){
     return mip.mip_stat;
 };
 
-var glp_mip_obj_val = exports.glp_mip_obj_val = function(mip){
+var glp_mip_obj_val = exports["glp_mip_obj_val"] = function(mip){
     return mip.mip_obj;
 };
 
-var glp_mip_row_val = exports.glp_mip_row_val = function(mip, i){
+var glp_mip_row_val = exports["glp_mip_row_val"] = function(mip, i){
     if (!(1 <= i && i <= mip.m))
         xerror("glp_mip_row_val: i = " + i + "; row number out of range");
     return mip.row[i].mipx;
 };
 
-var glp_mip_col_val = exports.glp_mip_col_val = function(mip, j){
+var glp_mip_col_val = exports["glp_mip_col_val"] = function(mip, j){
     if (!(1 <= j && j <= mip.n))
         xerror("glp_mip_col_val: j = " + j + "; column number out of range");
     return mip.col[j].mipx;
@@ -2705,11 +2687,11 @@ function _glp_check_kkt(P, sol, cond, callback){
     callback(ae_max, ae_ind, re_max, re_ind);
 }
 
-var glp_bf_exists = exports.glp_bf_exists = function(lp){
+var glp_bf_exists = exports["glp_bf_exists"] = function(lp){
     return (lp.m == 0 || lp.valid);
 };
 
-var glp_factorize = exports.glp_factorize = function(lp){
+var glp_factorize = exports["glp_factorize"] = function(lp){
 
     function b_col(lp, j, ind, val){
         var m = lp.m;
@@ -2806,13 +2788,13 @@ var glp_factorize = exports.glp_factorize = function(lp){
     return ret;
 };
 
-var glp_bf_updated = exports.glp_bf_updated = function(lp){
+var glp_bf_updated = exports["glp_bf_updated"] = function(lp){
     if (!(lp.m == 0 || lp.valid))
         xerror("glp_bf_update: basis factorization does not exist");
     return (lp.m == 0 ? 0 : bfd_get_count(lp.bfd));
 };
 
-var glp_get_bfcp = exports.glp_get_bfcp = function(lp, parm){
+var glp_get_bfcp = exports["glp_get_bfcp"] = function(lp, parm){
     var bfcp = lp.bfcp;
     if (bfcp == null)
     {  parm.type = GLP_BF_FT;
@@ -2837,7 +2819,7 @@ function copy_bfcp(lp){
     bfd_set_parm(lp.bfd, parm);
 }
 
-var glp_set_bfcp = exports.glp_set_bfcp = function(lp, parm){
+var glp_set_bfcp = exports["glp_set_bfcp"] = function(lp, parm){
     var bfcp = lp.bfcp;
     if (parm == null)
     {  /* reset to default values */
@@ -2878,7 +2860,7 @@ var glp_set_bfcp = exports.glp_set_bfcp = function(lp, parm){
     if (lp.bfd != null) copy_bfcp(lp);
 };
 
-var glp_get_bhead = exports.glp_get_bhead = function(lp, k){
+var glp_get_bhead = exports["glp_get_bhead"] = function(lp, k){
     if (!(lp.m == 0 || lp.valid))
         xerror("glp_get_bhead: basis factorization does not exist");
     if (!(1 <= k && k <= lp.m))
@@ -2886,7 +2868,7 @@ var glp_get_bhead = exports.glp_get_bhead = function(lp, k){
     return lp.head[k];
 };
 
-var glp_get_row_bind = exports.glp_get_row_bind = function(lp, i){
+var glp_get_row_bind = exports["glp_get_row_bind"] = function(lp, i){
     if (!(lp.m == 0 || lp.valid))
         xerror("glp_get_row_bind: basis factorization does not exist");
     if (!(1 <= i && i <= lp.m))
@@ -2894,7 +2876,7 @@ var glp_get_row_bind = exports.glp_get_row_bind = function(lp, i){
     return lp.row[i].bind;
 };
 
-var glp_get_col_bind = exports.glp_get_col_bind = function(lp, j){
+var glp_get_col_bind = exports["glp_get_col_bind"] = function(lp, j){
     if (!(lp.m == 0 || lp.valid))
         xerror("glp_get_col_bind: basis factorization does not exist");
     if (!(1 <= j && j <= lp.n))
@@ -2902,7 +2884,7 @@ var glp_get_col_bind = exports.glp_get_col_bind = function(lp, j){
     return lp.col[j].bind;
 };
 
-var glp_ftran = exports.glp_ftran = function(lp, x){
+var glp_ftran = exports["glp_ftran"] = function(lp, x){
     var m = lp.m;
     var row = lp.row;
     var col = lp.col;
@@ -2926,7 +2908,7 @@ var glp_ftran = exports.glp_ftran = function(lp, x){
     }
 };
 
-var glp_btran = exports.glp_btran = function(lp, x){
+var glp_btran = exports["glp_btran"] = function(lp, x){
     var m = lp.m;
     var row = lp.row;
     var col = lp.col;
@@ -2950,7 +2932,7 @@ var glp_btran = exports.glp_btran = function(lp, x){
         x[i] *= row[i].rii;
 };
 
-var glp_warm_up = exports.glp_warm_up = function(P){
+var glp_warm_up = exports["glp_warm_up"] = function(P){
     var row;
     var col;
     var aij;
@@ -3107,7 +3089,7 @@ var glp_warm_up = exports.glp_warm_up = function(P){
     return 0;
 }
 
-var glp_eval_tab_row = exports.glp_eval_tab_row = function(lp, k, ind, val){
+var glp_eval_tab_row = exports["glp_eval_tab_row"] = function(lp, k, ind, val){
     var m = lp.m;
     var n = lp.n;
     var i, t, len, lll, iii;
@@ -3162,7 +3144,7 @@ var glp_eval_tab_row = exports.glp_eval_tab_row = function(lp, k, ind, val){
     return len;
 };
 
-var glp_eval_tab_col = exports.glp_eval_tab_col = function(lp, k, ind, val){
+var glp_eval_tab_col = exports["glp_eval_tab_col"] = function(lp, k, ind, val){
     var m = lp.m;
     var n = lp.n;
     var t, len, stat;
@@ -3205,7 +3187,7 @@ var glp_eval_tab_col = exports.glp_eval_tab_col = function(lp, k, ind, val){
     return len;
 };
 
-var glp_transform_row = exports.glp_transform_row = function(P, len, ind, val){
+var glp_transform_row = exports["glp_transform_row"] = function(P, len, ind, val){
     var i, j, k, m, n, t, lll, iii;
     var alfa, a, aB, rho, vvv;
     if (!glp_bf_exists(P))
@@ -3268,7 +3250,7 @@ var glp_transform_row = exports.glp_transform_row = function(P, len, ind, val){
     return len;
 };
 
-var glp_transform_col = exports.glp_transform_col = function(P, len, ind, val){
+var glp_transform_col = exports["glp_transform_col"] = function(P, len, ind, val){
     var i, m, t;
     var a, alfa;
     if (!glp_bf_exists(P))
@@ -3303,7 +3285,7 @@ var glp_transform_col = exports.glp_transform_col = function(P, len, ind, val){
     return len;
 };
 
-var glp_prim_rtest = exports.glp_prim_rtest = function(P, len, ind, val, dir, eps){
+var glp_prim_rtest = exports["glp_prim_rtest"] = function(P, len, ind, val, dir, eps){
     var k, m, n, piv, t, type, stat;
     var alfa, big, beta, lb, ub, temp, teta;
     if (glp_get_prim_stat(P) != GLP_FEAS)
@@ -3397,7 +3379,7 @@ var glp_prim_rtest = exports.glp_prim_rtest = function(P, len, ind, val, dir, ep
     return piv;
 };
 
-var glp_dual_rtest = exports.glp_dual_rtest = function(P, len, ind, val, dir, eps){
+var glp_dual_rtest = exports["glp_dual_rtest"] = function(P, len, ind, val, dir, eps){
     var k, m, n, piv, t, stat;
     var alfa, big, cost, obj, temp, teta;
     if (glp_get_dual_stat(P) != GLP_FEAS)
@@ -3560,7 +3542,7 @@ function _glp_analyze_row(P, len, ind, val, type, rhs, eps, callback){
     return ret;
 }
 
-var glp_analyze_bound = exports.glp_analyze_bound = function(P, k, callback){
+var glp_analyze_bound = exports["glp_analyze_bound"] = function(P, k, callback){
     var row;
     var col;
     var  m, n, stat, kase, p, len, piv, ind;
@@ -3666,7 +3648,7 @@ var glp_analyze_bound = exports.glp_analyze_bound = function(P, k, callback){
     callback(value1, var1, value2, var2)
 };
 
-var glp_analyze_coef = exports.glp_analyze_coef = function(P, k, out){
+var glp_analyze_coef = exports["glp_analyze_coef"] = function(P, k, out){
     var row, col;
     var m, n, type, stat, kase, p, q, dir, clen, cpiv, rlen, rpiv, cind, rind;
     var lb, ub, coef, x, lim_coef, new_x, d, delta, ll, uu, xx, rval, cval;
@@ -4174,20 +4156,21 @@ function glp_ios_terminate(tree){
         xprintf("The search is prematurely terminated due to application request");
     tree.stop = 1;
 }
+
 /* glpapi14.c (processing models in GNU MathProg language) */
 
-var glp_mpl_alloc_wksp = exports.glp_mpl_alloc_wksp = function(){
+var glp_mpl_alloc_wksp = exports["glp_mpl_alloc_wksp"] = function(){
     /* allocate the MathProg translator workspace */
     return mpl_initialize();
 };
 
-var _glp_mpl_init_rand = exports._glp_mpl_init_rand = function (tran, seed){
+var _glp_mpl_init_rand = exports["_glp_mpl_init_rand"] = function (tran, seed){
     if (tran.phase != 0)
     xerror("glp_mpl_init_rand: invalid call sequence\n");
     rng_init_rand(tran.rand, seed);
 };
 
-var glp_mpl_read_model = exports.glp_mpl_read_model = function(tran, name, callback, skip){
+var glp_mpl_read_model = exports["glp_mpl_read_model"] = function(tran, name, callback, skip){
     /* read and translate model section */
     var ret;
     if (tran.phase != 0)
@@ -4202,7 +4185,7 @@ var glp_mpl_read_model = exports.glp_mpl_read_model = function(tran, name, callb
     return ret;
 };
 
-var glp_mpl_read_model_from_string = exports.glp_mpl_read_model_from_string = function(tran, name, str, skip){
+var glp_mpl_read_model_from_string = exports["glp_mpl_read_model_from_string"] = function(tran, name, str, skip){
     var pos = 0;
     return glp_mpl_read_model(tran, name,
         function(){
@@ -4215,7 +4198,7 @@ var glp_mpl_read_model_from_string = exports.glp_mpl_read_model_from_string = fu
     )
 };
 
-var glp_mpl_read_data = exports.glp_mpl_read_data = function(tran, name, callback){
+var glp_mpl_read_data = exports["glp_mpl_read_data"] = function(tran, name, callback){
     /* read and translate data section */
     var ret;
     if (!(tran.phase == 1 || tran.phase == 2))
@@ -4230,7 +4213,7 @@ var glp_mpl_read_data = exports.glp_mpl_read_data = function(tran, name, callbac
     return ret;
 };
 
-var glp_mpl_read_data_from_string = exports.glp_mpl_read_data_from_string = function(tran, name, str){
+var glp_mpl_read_data_from_string = exports["glp_mpl_read_data_from_string"] = function(tran, name, str){
     var pos = 0;
     return glp_mpl_read_data(tran, name,
         function(){
@@ -4242,7 +4225,7 @@ var glp_mpl_read_data_from_string = exports.glp_mpl_read_data_from_string = func
     )
 };
 
-var glp_mpl_generate = exports.glp_mpl_generate = function(tran, name, callback){
+var glp_mpl_generate = exports["glp_mpl_generate"] = function(tran, name, callback){
     /* generate the model */
     var ret;
     if (!(tran.phase == 1 || tran.phase == 2))
@@ -4255,7 +4238,7 @@ var glp_mpl_generate = exports.glp_mpl_generate = function(tran, name, callback)
     return ret;
 };
 
-var glp_mpl_build_prob = exports.glp_mpl_build_prob = function(tran, prob){
+var glp_mpl_build_prob = exports["glp_mpl_build_prob"] = function(tran, prob){
     /* build LP/MIP problem instance from the model */
     var m, n, i, j, t, kind, type, len, ind;
     var lb, ub, val;
@@ -4357,7 +4340,7 @@ var glp_mpl_build_prob = exports.glp_mpl_build_prob = function(tran, prob){
     }
 };
 
-var glp_mpl_postsolve = exports.glp_mpl_postsolve = function(tran, prob, sol){
+var glp_mpl_postsolve = exports["glp_mpl_postsolve"] = function(tran, prob, sol){
     /* postsolve the model */
     var i, j, m, n, stat, ret;
     var prim, dual;
@@ -4423,7 +4406,6 @@ var glp_mpl_postsolve = exports.glp_mpl_postsolve = function(tran, prob, sol){
         ret = 1;
     return ret;
 };
-
 
 
 /* return codes: */
@@ -4665,7 +4647,7 @@ function check_parm(func, parm){
 var CHAR_SET = "!\"#$%&()/,.;?@_`'{}|~";
 /* characters, which may appear in symbolic names */
 
-var glp_read_lp = exports.glp_read_lp = function(P, parm, callback){
+var glp_read_lp = exports["glp_read_lp"] = function(P, parm, callback){
     var
         T_EOF        = 0x00,  /* end of file */
         T_MINIMIZE   = 0x01,  /* keyword 'minimize' */
@@ -5410,7 +5392,7 @@ var glp_read_lp = exports.glp_read_lp = function(P, parm, callback){
     return done();
 };
 
-var glp_write_lp = exports.glp_write_lp = function(P, parm, callback){
+var glp_write_lp = exports["glp_write_lp"] = function(P, parm, callback){
 
     function check_name(name){
         /* check if specified name is valid for CPLEX LP format */
@@ -5655,7 +5637,7 @@ var glp_write_lp = exports.glp_write_lp = function(P, parm, callback){
     return skip();
 };
 
-var glp_read_lp_from_string = exports.glp_read_lp_from_string = function(P, parm, str){
+var glp_read_lp_from_string = exports["glp_read_lp_from_string"] = function(P, parm, str){
     var pos = 0;
     return glp_read_lp(P, parm,
         function(){
@@ -12519,6 +12501,7 @@ function ios_process_cuts(T){
     }
 }
 
+
 function ios_choose_node(T){
     function most_feas(T){
         /* select subproblem whose parent has minimal sum of integer
@@ -12638,275 +12621,275 @@ function ios_choose_node(T){
 
 /* library version numbers: */
 var
-    GLP_MAJOR_VERSION = exports.GLP_MAJOR_VERSION = 4,
-    GLP_MINOR_VERSION = exports.GLP_MINOR_VERSION = 47,
+    GLP_MAJOR_VERSION = exports["GLP_MAJOR_VERSION"] = 4,
+    GLP_MINOR_VERSION = exports["GLP_MINOR_VERSION"] = 47,
 
 /* optimization direction flag: */
-    GLP_MIN = exports.GLP_MIN = 1, /* minimization */
-    GLP_MAX = exports.GLP_MAX = 2, /* maximization */
+    GLP_MIN = exports["GLP_MIN"] = 1, /* minimization */
+    GLP_MAX = exports["GLP_MAX"] = 2, /* maximization */
 
 /* kind of structural variable: */
-    GLP_CV = exports.GLP_CV = 1, /* continuous variable */
-    GLP_IV = exports.GLP_IV = 2, /* integer variable */
-    GLP_BV = exports.GLP_BV = 3, /* binary variable */
+    GLP_CV = exports["GLP_CV"] = 1, /* continuous variable */
+    GLP_IV = exports["GLP_IV"] = 2, /* integer variable */
+    GLP_BV = exports["GLP_BV"] = 3, /* binary variable */
 
 /* type of auxiliary/structural variable: */
-    GLP_FR = exports.GLP_FR = exports.GLP_FR = 1, /* free variable */
-    GLP_LO = exports.GLP_LO = exports.GLP_LO = 2, /* variable with lower bound */
-    GLP_UP = exports.GLP_UP = exports.GLP_UP = 3, /* variable with upper bound */
-    GLP_DB = exports.GLP_DB = exports.GLP_DB = 4, /* double-bounded variable */
-    GLP_FX = exports.GLP_FX = exports.GLP_FX = 5, /* fixed variable */
+    GLP_FR = exports["GLP_FR"] = 1, /* free variable */
+    GLP_LO = exports["GLP_LO"] = 2, /* variable with lower bound */
+    GLP_UP = exports["GLP_UP"] = 3, /* variable with upper bound */
+    GLP_DB = exports["GLP_DB"] = 4, /* double-bounded variable */
+    GLP_FX = exports["GLP_FX"] = 5, /* fixed variable */
 
 /* status of auxiliary/structural variable: */
-    GLP_BS = exports.GLP_BS = 1, /* basic variable */
-    GLP_NL = exports.GLP_NL = 2, /* non-basic variable on lower bound */
-    GLP_NU = exports.GLP_NU = 3, /* non-basic variable on upper bound */
-    GLP_NF = exports.GLP_NF = 4, /* non-basic free variable */
-    GLP_NS = exports.GLP_NS = 5, /* non-basic fixed variable */
+    GLP_BS = exports["GLP_BS"] = 1, /* basic variable */
+    GLP_NL = exports["GLP_NL"] = 2, /* non-basic variable on lower bound */
+    GLP_NU = exports["GLP_NU"] = 3, /* non-basic variable on upper bound */
+    GLP_NF = exports["GLP_NF"] = 4, /* non-basic free variable */
+    GLP_NS = exports["GLP_NS"] = 5, /* non-basic fixed variable */
 
 /* scaling options: */
-    GLP_SF_GM = exports.GLP_SF_GM = 0x01, /* perform geometric mean scaling */
-    GLP_SF_EQ = exports.GLP_SF_EQ = 0x10, /* perform equilibration scaling */
-    GLP_SF_2N = exports.GLP_SF_2N = 0x20, /* round scale factors to power of two */
-    GLP_SF_SKIP = exports.GLP_SF_SKIP = 0x40, /* skip if problem is well scaled */
-    GLP_SF_AUTO = exports.GLP_SF_AUTO = 0x80, /* choose scaling options automatically */
+    GLP_SF_GM = exports["GLP_SF_GM"] = 0x01, /* perform geometric mean scaling */
+    GLP_SF_EQ = exports["GLP_SF_EQ"] = 0x10, /* perform equilibration scaling */
+    GLP_SF_2N = exports["GLP_SF_2N"] = 0x20, /* round scale factors to power of two */
+    GLP_SF_SKIP = exports["GLP_SF_SKIP"] = 0x40, /* skip if problem is well scaled */
+    GLP_SF_AUTO = exports["GLP_SF_AUTO"] = 0x80, /* choose scaling options automatically */
 
 /* solution indicator: */
-    GLP_SOL = exports.GLP_SOL = 1, /* basic solution */
-    GLP_IPT = exports.GLP_IPT = 2, /* interior-point solution */
-    GLP_MIP = exports.GLP_MIP = 3, /* mixed integer solution */
+    GLP_SOL = exports["GLP_SOL"] = 1, /* basic solution */
+    GLP_IPT = exports["GLP_IPT"] = 2, /* interior-point solution */
+    GLP_MIP = exports["GLP_MIP"] = 3, /* mixed integer solution */
 
 /* solution status: */
-    GLP_UNDEF = exports.GLP_UNDEF = 1, /* solution is undefined */
-    GLP_FEAS = exports.GLP_FEAS = 2, /* solution is feasible */
-    GLP_INFEAS = exports.GLP_INFEAS = 3, /* solution is infeasible */
-    GLP_NOFEAS = exports.GLP_NOFEAS = 4, /* no feasible solution exists */
-    GLP_OPT = exports.GLP_OPT = 5, /* solution is optimal */
-    GLP_UNBND = exports.GLP_UNBND = 6, /* solution is unbounded */
+    GLP_UNDEF = exports["GLP_UNDEF"] = 1, /* solution is undefined */
+    GLP_FEAS = exports["GLP_FEAS"] = 2, /* solution is feasible */
+    GLP_INFEAS = exports["GLP_INFEAS"] = 3, /* solution is infeasible */
+    GLP_NOFEAS = exports["GLP_NOFEAS"] = 4, /* no feasible solution exists */
+    GLP_OPT = exports["GLP_OPT"] = 5, /* solution is optimal */
+    GLP_UNBND = exports["GLP_UNBND"] = 6, /* solution is unbounded */
 
 /* basis factorization control parameters */
-    GLP_BF_FT = exports.GLP_BF_FT = 1, /* LUF + Forrest-Tomlin */
-    GLP_BF_BG = exports.GLP_BF_BG = 2, /* LUF + Schur compl. + Bartels-Golub */
-    GLP_BF_GR = exports.GLP_BF_GR = 3, /* LUF + Schur compl. + Givens rotation */
+    GLP_BF_FT = exports["GLP_BF_FT"] = 1, /* LUF + Forrest-Tomlin */
+    GLP_BF_BG = exports["GLP_BF_BG"] = 2, /* LUF + Schur compl. + Bartels-Golub */
+    GLP_BF_GR = exports["GLP_BF_GR"] = 3, /* LUF + Schur compl. + Givens rotation */
 
 /* simplex method control parameters */
-    GLP_MSG_OFF = exports.GLP_MSG_OFF = 0, /* no output */
-    GLP_MSG_ERR = exports.GLP_MSG_ERR = 1, /* warning and error messages only */
-    GLP_MSG_ON = exports.GLP_MSG_ON = 2, /* normal output */
-    GLP_MSG_ALL = exports.GLP_MSG_ALL = 3, /* full output */
-    GLP_MSG_DBG = exports.GLP_MSG_DBG = 4, /* debug output */
+    GLP_MSG_OFF = exports["GLP_MSG_OFF"] = 0, /* no output */
+    GLP_MSG_ERR = exports["GLP_MSG_ERR"] = 1, /* warning and error messages only */
+    GLP_MSG_ON = exports["GLP_MSG_ON"] = 2, /* normal output */
+    GLP_MSG_ALL = exports["GLP_MSG_ALL"] = 3, /* full output */
+    GLP_MSG_DBG = exports["GLP_MSG_DBG"] = 4, /* debug output */
 
-    GLP_PRIMAL = exports.GLP_PRIMAL = 1, /* use primal simplex */
-    GLP_DUALP = exports.GLP_DUALP = 2, /* use dual; if it fails, use primal */
-    GLP_DUAL = exports.GLP_DUAL = 3, /* use dual simplex */
+    GLP_PRIMAL = exports["GLP_PRIMAL"] = 1, /* use primal simplex */
+    GLP_DUALP = exports["GLP_DUALP"] = 2, /* use dual; if it fails, use primal */
+    GLP_DUAL = exports["GLP_DUAL"] = 3, /* use dual simplex */
 
-    GLP_PT_STD = exports.GLP_PT_STD = 0x11, /* standard (Dantzig rule) */
-    GLP_PT_PSE = exports.GLP_PT_PSE = 0x22, /* projected steepest edge */
+    GLP_PT_STD = exports["GLP_PT_STD"] = 0x11, /* standard (Dantzig rule) */
+    GLP_PT_PSE = exports["GLP_PT_PSE"] = 0x22, /* projected steepest edge */
 
-    GLP_RT_STD = exports.GLP_RT_STD = 0x11, /* standard (textbook) */
-    GLP_RT_HAR = exports.GLP_RT_HAR = 0x22, /* two-pass Harris' ratio test */
+    GLP_RT_STD = exports["GLP_RT_STD"] = 0x11, /* standard (textbook) */
+    GLP_RT_HAR = exports["GLP_RT_HAR"] = 0x22, /* two-pass Harris' ratio test */
 
 /* interior-point solver control parameters */
-    GLP_ORD_NONE = exports.GLP_ORD_NONE = 0, /* natural (original) ordering */
-    GLP_ORD_QMD = exports.GLP_ORD_QMD = 1, /* quotient minimum degree (QMD) */
-    GLP_ORD_AMD = exports.GLP_ORD_AMD = 2, /* approx. minimum degree (AMD) */
-    GLP_ORD_SYMAMD = exports.GLP_ORD_SYMAMD = 3, /* approx. minimum degree (SYMAMD) */
+    GLP_ORD_NONE = exports["GLP_ORD_NONE"] = 0, /* natural (original) ordering */
+    GLP_ORD_QMD = exports["GLP_ORD_QMD"] = 1, /* quotient minimum degree (QMD) */
+    GLP_ORD_AMD = exports["GLP_ORD_AMD"] = 2, /* approx. minimum degree (AMD) */
+    GLP_ORD_SYMAMD = exports["GLP_ORD_SYMAMD"] = 3, /* approx. minimum degree (SYMAMD) */
 
 /* integer optimizer control parameters */
-    GLP_BR_FFV = exports.GLP_BR_FFV = 1, /* first fractional variable */
-    GLP_BR_LFV = exports.GLP_BR_LFV = 2, /* last fractional variable */
-    GLP_BR_MFV = exports.GLP_BR_MFV = 3, /* most fractional variable */
-    GLP_BR_DTH = exports.GLP_BR_DTH = 4, /* heuristic by Driebeck and Tomlin */
-    GLP_BR_PCH = exports.GLP_BR_PCH = 5, /* hybrid pseudocost heuristic */
+    GLP_BR_FFV = exports["GLP_BR_FFV"] = 1, /* first fractional variable */
+    GLP_BR_LFV = exports["GLP_BR_LFV"] = 2, /* last fractional variable */
+    GLP_BR_MFV = exports["GLP_BR_MFV"] = 3, /* most fractional variable */
+    GLP_BR_DTH = exports["GLP_BR_DTH"] = 4, /* heuristic by Driebeck and Tomlin */
+    GLP_BR_PCH = exports["GLP_BR_PCH"] = 5, /* hybrid pseudocost heuristic */
 
-    GLP_BT_DFS = exports.GLP_BT_DFS = 1, /* depth first search */
-    GLP_BT_BFS = exports.GLP_BT_BFS = 2, /* breadth first search */
-    GLP_BT_BLB = exports.GLP_BT_BLB = 3, /* best local bound */
-    GLP_BT_BPH = exports.GLP_BT_BPH = 4, /* best projection heuristic */
+    GLP_BT_DFS = exports["GLP_BT_DFS"] = 1, /* depth first search */
+    GLP_BT_BFS = exports["GLP_BT_BFS"] = 2, /* breadth first search */
+    GLP_BT_BLB = exports["GLP_BT_BLB"] = 3, /* best local bound */
+    GLP_BT_BPH = exports["GLP_BT_BPH"] = 4, /* best projection heuristic */
 
-    GLP_PP_NONE = exports.GLP_PP_NONE = 0, /* disable preprocessing */
-    GLP_PP_ROOT = exports.GLP_PP_ROOT = 1, /* preprocessing only on root level */
-    GLP_PP_ALL = exports.GLP_PP_ALL = 2, /* preprocessing on all levels */
+    GLP_PP_NONE = exports["GLP_PP_NONE"] = 0, /* disable preprocessing */
+    GLP_PP_ROOT = exports["GLP_PP_ROOT"] = 1, /* preprocessing only on root level */
+    GLP_PP_ALL = exports["GLP_PP_ALL"] = 2, /* preprocessing on all levels */
 
 /* additional row attributes */
-    GLP_RF_REG = exports.GLP_RF_REG = 0, /* regular constraint */
-    GLP_RF_LAZY = exports.GLP_RF_LAZY = 1, /* "lazy" constraint */
-    GLP_RF_CUT = exports.GLP_RF_CUT = 2, /* cutting plane constraint */
+    GLP_RF_REG = exports["GLP_RF_REG"] = 0, /* regular constraint */
+    GLP_RF_LAZY = exports["GLP_RF_LAZY"] = 1, /* "lazy" constraint */
+    GLP_RF_CUT = exports["GLP_RF_CUT"] = 2, /* cutting plane constraint */
 
 /* row class descriptor: */
-    GLP_RF_GMI = exports.GLP_RF_GMI = 1, /* Gomory's mixed integer cut */
-    GLP_RF_MIR = exports.GLP_RF_MIR = 2, /* mixed integer rounding cut */
-    GLP_RF_COV = exports.GLP_RF_COV = 3, /* mixed cover cut */
-    GLP_RF_CLQ = exports.GLP_RF_CLQ = 4, /* clique cut */
+    GLP_RF_GMI = exports["GLP_RF_GMI"] = 1, /* Gomory's mixed integer cut */
+    GLP_RF_MIR = exports["GLP_RF_MIR"] = 2, /* mixed integer rounding cut */
+    GLP_RF_COV = exports["GLP_RF_COV"] = 3, /* mixed cover cut */
+    GLP_RF_CLQ = exports["GLP_RF_CLQ"] = 4, /* clique cut */
 
 /* enable/disable flag: */
-    GLP_ON = exports.GLP_ON = 1, /* enable something */
-    GLP_OFF = exports.GLP_OFF = 0, /* disable something */
+    GLP_ON = exports["GLP_ON"] = 1, /* enable something */
+    GLP_OFF = exports["GLP_OFF"] = 0, /* disable something */
 
 /* reason codes: */
-    GLP_IROWGEN = exports.GLP_IROWGEN = 0x01, /* request for row generation */
-    GLP_IBINGO = exports.GLP_IBINGO = 0x02, /* better integer solution found */
-    GLP_IHEUR = exports.GLP_IHEUR = 0x03, /* request for heuristic solution */
-    GLP_ICUTGEN = exports.GLP_ICUTGEN = 0x04, /* request for cut generation */
-    GLP_IBRANCH = exports.GLP_IBRANCH = 0x05, /* request for branching */
-    GLP_ISELECT = exports.GLP_ISELECT = 0x06, /* request for subproblem selection */
-    GLP_IPREPRO = exports.GLP_IPREPRO = 0x07, /* request for preprocessing */
+    GLP_IROWGEN = exports["GLP_IROWGEN"] = 0x01, /* request for row generation */
+    GLP_IBINGO = exports["GLP_IBINGO"] = 0x02, /* better integer solution found */
+    GLP_IHEUR = exports["GLP_IHEUR"] = 0x03, /* request for heuristic solution */
+    GLP_ICUTGEN = exports["GLP_ICUTGEN"] = 0x04, /* request for cut generation */
+    GLP_IBRANCH = exports["GLP_IBRANCH"] = 0x05, /* request for branching */
+    GLP_ISELECT = exports["GLP_ISELECT"] = 0x06, /* request for subproblem selection */
+    GLP_IPREPRO = exports["GLP_IPREPRO"] = 0x07, /* request for preprocessing */
 
 /* branch selection indicator: */
-    GLP_NO_BRNCH = exports.GLP_NO_BRNCH = 0, /* select no branch */
-    GLP_DN_BRNCH = exports.GLP_DN_BRNCH = 1, /* select down-branch */
-    GLP_UP_BRNCH = exports.GLP_UP_BRNCH = 2, /* select up-branch */
+    GLP_NO_BRNCH = exports["GLP_NO_BRNCH"] = 0, /* select no branch */
+    GLP_DN_BRNCH = exports["GLP_DN_BRNCH"] = 1, /* select down-branch */
+    GLP_UP_BRNCH = exports["GLP_UP_BRNCH"] = 2, /* select up-branch */
 
 /* return codes: */
-    GLP_EBADB = exports.GLP_EBADB = 0x01, /* invalid basis */
-    GLP_ESING = exports.GLP_ESING = 0x02, /* singular matrix */
-    GLP_ECOND = exports.GLP_ECOND = 0x03, /* ill-conditioned matrix */
-    GLP_EBOUND = exports.GLP_EBOUND = 0x04, /* invalid bounds */
-    GLP_EFAIL = exports.GLP_EFAIL = 0x05, /* solver failed */
-    GLP_EOBJLL = exports.GLP_EOBJLL = 0x06, /* objective lower limit reached */
-    GLP_EOBJUL = exports.GLP_EOBJUL = 0x07, /* objective upper limit reached */
-    GLP_EITLIM = exports.GLP_EITLIM = 0x08, /* iteration limit exceeded */
-    GLP_ETMLIM = exports.GLP_ETMLIM = 0x09, /* time limit exceeded */
-    GLP_ENOPFS = exports.GLP_ENOPFS = 0x0A, /* no primal feasible solution */
-    GLP_ENODFS = exports.GLP_ENODFS = 0x0B, /* no dual feasible solution */
-    GLP_EROOT = exports.GLP_EROOT = 0x0C, /* root LP optimum not provided */
-    GLP_ESTOP = exports.GLP_ESTOP = 0x0D, /* search terminated by application */
-    GLP_EMIPGAP = exports.GLP_EMIPGAP = 0x0E, /* relative mip gap tolerance reached */
-    GLP_ENOFEAS = exports.GLP_ENOFEAS = 0x0F, /* no primal/dual feasible solution */
-    GLP_ENOCVG = exports.GLP_ENOCVG = 0x10, /* no convergence */
-    GLP_EINSTAB = exports.GLP_EINSTAB = 0x11, /* numerical instability */
-    GLP_EDATA = exports.GLP_EDATA = 0x12, /* invalid data */
-    GLP_ERANGE = exports.GLP_ERANGE = 0x13, /* result out of range */
+    GLP_EBADB = exports["GLP_EBADB"] = 0x01, /* invalid basis */
+    GLP_ESING = exports["GLP_ESING"] = 0x02, /* singular matrix */
+    GLP_ECOND = exports["GLP_ECOND"] = 0x03, /* ill-conditioned matrix */
+    GLP_EBOUND = exports["GLP_EBOUND"] = 0x04, /* invalid bounds */
+    GLP_EFAIL = exports["GLP_EFAIL"] = 0x05, /* solver failed */
+    GLP_EOBJLL = exports["GLP_EOBJLL"] = 0x06, /* objective lower limit reached */
+    GLP_EOBJUL = exports["GLP_EOBJUL"] = 0x07, /* objective upper limit reached */
+    GLP_EITLIM = exports["GLP_EITLIM"] = 0x08, /* iteration limit exceeded */
+    GLP_ETMLIM = exports["GLP_ETMLIM"] = 0x09, /* time limit exceeded */
+    GLP_ENOPFS = exports["GLP_ENOPFS"] = 0x0A, /* no primal feasible solution */
+    GLP_ENODFS = exports["GLP_ENODFS"] = 0x0B, /* no dual feasible solution */
+    GLP_EROOT = exports["GLP_EROOT"] = 0x0C, /* root LP optimum not provided */
+    GLP_ESTOP = exports["GLP_ESTOP"] = 0x0D, /* search terminated by application */
+    GLP_EMIPGAP = exports["GLP_EMIPGAP"] = 0x0E, /* relative mip gap tolerance reached */
+    GLP_ENOFEAS = exports["GLP_ENOFEAS"] = 0x0F, /* no primal/dual feasible solution */
+    GLP_ENOCVG = exports["GLP_ENOCVG"] = 0x10, /* no convergence */
+    GLP_EINSTAB = exports["GLP_EINSTAB"] = 0x11, /* numerical instability */
+    GLP_EDATA = exports["GLP_EDATA"] = 0x12, /* invalid data */
+    GLP_ERANGE = exports["GLP_ERANGE"] = 0x13, /* result out of range */
 
 /* condition indicator: */
-    GLP_KKT_PE = exports.GLP_KKT_PE = 1, /* primal equalities */
-    GLP_KKT_PB = exports.GLP_KKT_PB = 2, /* primal bounds */
-    GLP_KKT_DE = exports.GLP_KKT_DE = 3, /* dual equalities */
-    GLP_KKT_DB = exports.GLP_KKT_DB = 4, /* dual bounds */
-    GLP_KKT_CS = exports.GLP_KKT_CS = 5, /* complementary slackness */
+    GLP_KKT_PE = exports["GLP_KKT_PE"] = 1, /* primal equalities */
+    GLP_KKT_PB = exports["GLP_KKT_PB"] = 2, /* primal bounds */
+    GLP_KKT_DE = exports["GLP_KKT_DE"] = 3, /* dual equalities */
+    GLP_KKT_DB = exports["GLP_KKT_DB"] = 4, /* dual bounds */
+    GLP_KKT_CS = exports["GLP_KKT_CS"] = 5, /* complementary slackness */
 
 /* MPS file format: */
-    GLP_MPS_DECK = exports.GLP_MPS_DECK = 1, /* fixed (ancient) */
-    GLP_MPS_FILE = exports.GLP_MPS_FILE = 2, /* free (modern) */
+    GLP_MPS_DECK = exports["GLP_MPS_DECK"] = 1, /* fixed (ancient) */
+    GLP_MPS_FILE = exports["GLP_MPS_FILE"] = 2, /* free (modern) */
 
 /* assignment problem formulation: */
-    GLP_ASN_MIN = exports.GLP_ASN_MIN = 1, /* perfect matching (minimization) */
-    GLP_ASN_MAX = exports.GLP_ASN_MAX = 2, /* perfect matching (maximization) */
-    GLP_ASN_MMP = exports.GLP_ASN_MMP = 3, /* maximum matching */
+    GLP_ASN_MIN = exports["GLP_ASN_MIN"] = 1, /* perfect matching (minimization) */
+    GLP_ASN_MAX = exports["GLP_ASN_MAX"] = 2, /* perfect matching (maximization) */
+    GLP_ASN_MMP = exports["GLP_ASN_MMP"] = 3, /* maximum matching */
 
 /* problem class: */
-    LPX_LP = exports.LPX_LP = 100, /* linear programming (LP) */
-    LPX_MIP = exports.LPX_MIP = 101, /* mixed integer programming (MIP) */
+    LPX_LP = exports["LPX_LP"] = 100, /* linear programming (LP) */
+    LPX_MIP = exports["LPX_MIP"] = 101, /* mixed integer programming (MIP) */
 
 /* type of auxiliary/structural variable: */
-    LPX_FR = exports.LPX_FR = 110, /* free variable */
-    LPX_LO = exports.LPX_LO = 111, /* variable with lower bound */
-    LPX_UP = exports.LPX_UP = 112, /* variable with upper bound */
-    LPX_DB = exports.LPX_DB = 113, /* double-bounded variable */
-    LPX_FX = exports.LPX_FX = 114, /* fixed variable */
+    LPX_FR = exports["LPX_FR"] = 110, /* free variable */
+    LPX_LO = exports["LPX_LO"] = 111, /* variable with lower bound */
+    LPX_UP = exports["LPX_UP"] = 112, /* variable with upper bound */
+    LPX_DB = exports["LPX_DB"] = 113, /* double-bounded variable */
+    LPX_FX = exports["LPX_FX"] = 114, /* fixed variable */
 
 /* optimization direction flag: */
-    LPX_MIN = exports.LPX_MIN = 120, /* minimization */
-    LPX_MAX = exports.LPX_MAX = 121, /* maximization */
+    LPX_MIN = exports["LPX_MIN"] = 120, /* minimization */
+    LPX_MAX = exports["LPX_MAX"] = 121, /* maximization */
 
 /* status of primal basic solution: */
-    LPX_P_UNDEF = exports.LPX_P_UNDEF = 132, /* primal solution is undefined */
-    LPX_P_FEAS = exports.LPX_P_FEAS = 133, /* solution is primal feasible */
-    LPX_P_INFEAS = exports.LPX_P_INFEAS = 134, /* solution is primal infeasible */
-    LPX_P_NOFEAS = exports.LPX_P_NOFEAS = 135, /* no primal feasible solution exists */
+    LPX_P_UNDEF = exports["LPX_P_UNDEF"] = 132, /* primal solution is undefined */
+    LPX_P_FEAS = exports["LPX_P_FEAS"] = 133, /* solution is primal feasible */
+    LPX_P_INFEAS = exports["LPX_P_INFEAS"] = 134, /* solution is primal infeasible */
+    LPX_P_NOFEAS = exports["LPX_P_NOFEAS"] = 135, /* no primal feasible solution exists */
 
 /* status of dual basic solution: */
-    LPX_D_UNDEF = exports.LPX_D_UNDEF = 136, /* dual solution is undefined */
-    LPX_D_FEAS = exports.LPX_D_FEAS = 137, /* solution is dual feasible */
-    LPX_D_INFEAS = exports.LPX_D_INFEAS = 138, /* solution is dual infeasible */
-    LPX_D_NOFEAS = exports.LPX_D_NOFEAS = 139, /* no dual feasible solution exists */
+    LPX_D_UNDEF = exports["LPX_D_UNDEF"] = 136, /* dual solution is undefined */
+    LPX_D_FEAS = exports["LPX_D_FEAS"] = 137, /* solution is dual feasible */
+    LPX_D_INFEAS = exports["LPX_D_INFEAS"] = 138, /* solution is dual infeasible */
+    LPX_D_NOFEAS = exports["LPX_D_NOFEAS"] = 139, /* no dual feasible solution exists */
 
 /* status of auxiliary/structural variable: */
-    LPX_BS = exports.LPX_BS = 140, /* basic variable */
-    LPX_NL = exports.LPX_NL = 141, /* non-basic variable on lower bound */
-    LPX_NU = exports.LPX_NU = 142, /* non-basic variable on upper bound */
-    LPX_NF = exports.LPX_NF = 143, /* non-basic free variable */
-    LPX_NS = exports.LPX_NS = 144, /* non-basic fixed variable */
+    LPX_BS = exports["LPX_BS"] = 140, /* basic variable */
+    LPX_NL = exports["LPX_NL"] = 141, /* non-basic variable on lower bound */
+    LPX_NU = exports["LPX_NU"] = 142, /* non-basic variable on upper bound */
+    LPX_NF = exports["LPX_NF"] = 143, /* non-basic free variable */
+    LPX_NS = exports["LPX_NS"] = 144, /* non-basic fixed variable */
 
 /* status of interior-point solution: */
-    LPX_T_UNDEF = exports.LPX_T_UNDEF = 150, /* interior solution is undefined */
-    LPX_T_OPT = exports.LPX_T_OPT = 151, /* interior solution is optimal */
+    LPX_T_UNDEF = exports["LPX_T_UNDEF"] = 150, /* interior solution is undefined */
+    LPX_T_OPT = exports["LPX_T_OPT"] = 151, /* interior solution is optimal */
 
 /* kind of structural variable: */
-    LPX_CV = exports.LPX_CV = 160, /* continuous variable */
-    LPX_IV = exports.LPX_IV = 161, /* integer variable */
+    LPX_CV = exports["LPX_CV"] = 160, /* continuous variable */
+    LPX_IV = exports["LPX_IV"] = 161, /* integer variable */
 
 /* status of integer solution: */
-    LPX_I_UNDEF = exports.LPX_I_UNDEF = 170, /* integer solution is undefined */
-    LPX_I_OPT = exports.LPX_I_OPT = 171, /* integer solution is optimal */
-    LPX_I_FEAS = exports.LPX_I_FEAS = 172, /* integer solution is feasible */
-    LPX_I_NOFEAS = exports.LPX_I_NOFEAS = 173, /* no integer solution exists */
+    LPX_I_UNDEF = exports["LPX_I_UNDEF"] = 170, /* integer solution is undefined */
+    LPX_I_OPT = exports["LPX_I_OPT"] = 171, /* integer solution is optimal */
+    LPX_I_FEAS = exports["LPX_I_FEAS"] = 172, /* integer solution is feasible */
+    LPX_I_NOFEAS = exports["LPX_I_NOFEAS"] = 173, /* no integer solution exists */
 
 /* status codes reported by the routine lpx_get_status: */
-    LPX_OPT = exports.LPX_OPT = 180, /* optimal */
-    LPX_FEAS = exports.LPX_FEAS = 181, /* feasible */
-    LPX_INFEAS = exports.LPX_INFEAS = 182, /* infeasible */
-    LPX_NOFEAS = exports.LPX_NOFEAS = 183, /* no feasible */
-    LPX_UNBND = exports.LPX_UNBND = 184, /* unbounded */
-    LPX_UNDEF = exports.LPX_UNDEF = 185, /* undefined */
+    LPX_OPT = exports["LPX_OPT"] = 180, /* optimal */
+    LPX_FEAS = exports["LPX_FEAS"] = 181, /* feasible */
+    LPX_INFEAS = exports["LPX_INFEAS"] = 182, /* infeasible */
+    LPX_NOFEAS = exports["LPX_NOFEAS"] = 183, /* no feasible */
+    LPX_UNBND = exports["LPX_UNBND"] = 184, /* unbounded */
+    LPX_UNDEF = exports["LPX_UNDEF"] = 185, /* undefined */
 
 /* exit codes returned by solver routines: */
-    LPX_E_OK = exports.LPX_E_OK = 200, /* success */
-    LPX_E_EMPTY = exports.LPX_E_EMPTY = 201, /* empty problem */
-    LPX_E_BADB = exports.LPX_E_BADB = 202, /* invalid initial basis */
-    LPX_E_INFEAS = exports.LPX_E_INFEAS = 203, /* infeasible initial solution */
-    LPX_E_FAULT = exports.LPX_E_FAULT = 204, /* unable to start the search */
-    LPX_E_OBJLL = exports.LPX_E_OBJLL = 205, /* objective lower limit reached */
-    LPX_E_OBJUL = exports.LPX_E_OBJUL = 206, /* objective upper limit reached */
-    LPX_E_ITLIM = exports.LPX_E_ITLIM = 207, /* iterations limit exhausted */
-    LPX_E_TMLIM = exports.LPX_E_TMLIM = 208, /* time limit exhausted */
-    LPX_E_NOFEAS = exports.LPX_E_NOFEAS = 209, /* no feasible solution */
-    LPX_E_INSTAB = exports.LPX_E_INSTAB = 210, /* numerical instability */
-    LPX_E_SING = exports.LPX_E_SING = 211, /* problems with basis matrix */
-    LPX_E_NOCONV = exports.LPX_E_NOCONV = 212, /* no convergence (interior) */
-    LPX_E_NOPFS = exports.LPX_E_NOPFS = 213, /* no primal feas. sol. (LP presolver) */
-    LPX_E_NODFS = exports.LPX_E_NODFS = 214, /* no dual feas. sol. (LP presolver) */
-    LPX_E_MIPGAP = exports.LPX_E_MIPGAP = 215, /* relative mip gap tolerance reached */
+    LPX_E_OK = exports["LPX_E_OK"] = 200, /* success */
+    LPX_E_EMPTY = exports["LPX_E_EMPTY"] = 201, /* empty problem */
+    LPX_E_BADB = exports["LPX_E_BADB"] = 202, /* invalid initial basis */
+    LPX_E_INFEAS = exports["LPX_E_INFEAS"] = 203, /* infeasible initial solution */
+    LPX_E_FAULT = exports["LPX_E_FAULT"] = 204, /* unable to start the search */
+    LPX_E_OBJLL = exports["LPX_E_OBJLL"] = 205, /* objective lower limit reached */
+    LPX_E_OBJUL = exports["LPX_E_OBJUL"] = 206, /* objective upper limit reached */
+    LPX_E_ITLIM = exports["LPX_E_ITLIM"] = 207, /* iterations limit exhausted */
+    LPX_E_TMLIM = exports["LPX_E_TMLIM"] = 208, /* time limit exhausted */
+    LPX_E_NOFEAS = exports["LPX_E_NOFEAS"] = 209, /* no feasible solution */
+    LPX_E_INSTAB = exports["LPX_E_INSTAB"] = 210, /* numerical instability */
+    LPX_E_SING = exports["LPX_E_SING"] = 211, /* problems with basis matrix */
+    LPX_E_NOCONV = exports["LPX_E_NOCONV"] = 212, /* no convergence (interior) */
+    LPX_E_NOPFS = exports["LPX_E_NOPFS"] = 213, /* no primal feas. sol. (LP presolver) */
+    LPX_E_NODFS = exports["LPX_E_NODFS"] = 214, /* no dual feas. sol. (LP presolver) */
+    LPX_E_MIPGAP = exports["LPX_E_MIPGAP"] = 215, /* relative mip gap tolerance reached */
 
 /* control parameter identifiers: */
-    LPX_K_MSGLEV = exports.LPX_K_MSGLEV = 300, /* lp.msg_lev */
-    LPX_K_SCALE = exports.LPX_K_SCALE = 301, /* lp.scale */
-    LPX_K_DUAL = exports.LPX_K_DUAL = 302, /* lp.dual */
-    LPX_K_PRICE = exports.LPX_K_PRICE = 303, /* lp.price */
-    LPX_K_RELAX = exports.LPX_K_RELAX = 304, /* lp.relax */
-    LPX_K_TOLBND = exports.LPX_K_TOLBND = 305, /* lp.tol_bnd */
-    LPX_K_TOLDJ = exports.LPX_K_TOLDJ = 306, /* lp.tol_dj */
-    LPX_K_TOLPIV = exports.LPX_K_TOLPIV = 307, /* lp.tol_piv */
-    LPX_K_ROUND = exports.LPX_K_ROUND = 308, /* lp.round */
-    LPX_K_OBJLL = exports.LPX_K_OBJLL = 309, /* lp.obj_ll */
-    LPX_K_OBJUL = exports.LPX_K_OBJUL = 310, /* lp.obj_ul */
-    LPX_K_ITLIM = exports.LPX_K_ITLIM = 311, /* lp.it_lim */
-    LPX_K_ITCNT = exports.LPX_K_ITCNT = 312, /* lp.it_cnt */
-    LPX_K_TMLIM = exports.LPX_K_TMLIM = 313, /* lp.tm_lim */
-    LPX_K_OUTFRQ = exports.LPX_K_OUTFRQ = 314, /* lp.out_frq */
-    LPX_K_OUTDLY = exports.LPX_K_OUTDLY = 315, /* lp.out_dly */
-    LPX_K_BRANCH = exports.LPX_K_BRANCH = 316, /* lp.branch */
-    LPX_K_BTRACK = exports.LPX_K_BTRACK = 317, /* lp.btrack */
-    LPX_K_TOLINT = exports.LPX_K_TOLINT = 318, /* lp.tol_int */
-    LPX_K_TOLOBJ = exports.LPX_K_TOLOBJ = 319, /* lp.tol_obj */
-    LPX_K_MPSINFO = exports.LPX_K_MPSINFO = 320, /* lp.mps_info */
-    LPX_K_MPSOBJ = exports.LPX_K_MPSOBJ = 321, /* lp.mps_obj */
-    LPX_K_MPSORIG = exports.LPX_K_MPSORIG = 322, /* lp.mps_orig */
-    LPX_K_MPSWIDE = exports.LPX_K_MPSWIDE = 323, /* lp.mps_wide */
-    LPX_K_MPSFREE = exports.LPX_K_MPSFREE = 324, /* lp.mps_free */
-    LPX_K_MPSSKIP = exports.LPX_K_MPSSKIP = 325, /* lp.mps_skip */
-    LPX_K_LPTORIG = exports.LPX_K_LPTORIG = 326, /* lp.lpt_orig */
-    LPX_K_PRESOL = exports.LPX_K_PRESOL = 327, /* lp.presol */
-    LPX_K_BINARIZE = exports.LPX_K_BINARIZE = 328, /* lp.binarize */
-    LPX_K_USECUTS = exports.LPX_K_USECUTS = 329, /* lp.use_cuts */
-    LPX_K_BFTYPE = exports.LPX_K_BFTYPE = 330, /* lp.bfcp.type */
-    LPX_K_MIPGAP = exports.LPX_K_MIPGAP = 331, /* lp.mip_gap */
+    LPX_K_MSGLEV = exports["LPX_K_MSGLEV"] = 300, /* lp.msg_lev */
+    LPX_K_SCALE = exports["LPX_K_SCALE"] = 301, /* lp.scale */
+    LPX_K_DUAL = exports["LPX_K_DUAL"] = 302, /* lp.dual */
+    LPX_K_PRICE = exports["LPX_K_PRICE"] = 303, /* lp.price */
+    LPX_K_RELAX = exports["LPX_K_RELAX"] = 304, /* lp.relax */
+    LPX_K_TOLBND = exports["LPX_K_TOLBND"] = 305, /* lp.tol_bnd */
+    LPX_K_TOLDJ = exports["LPX_K_TOLDJ"] = 306, /* lp.tol_dj */
+    LPX_K_TOLPIV = exports["LPX_K_TOLPIV"] = 307, /* lp.tol_piv */
+    LPX_K_ROUND = exports["LPX_K_ROUND"] = 308, /* lp.round */
+    LPX_K_OBJLL = exports["LPX_K_OBJLL"] = 309, /* lp.obj_ll */
+    LPX_K_OBJUL = exports["LPX_K_OBJUL"] = 310, /* lp.obj_ul */
+    LPX_K_ITLIM = exports["LPX_K_ITLIM"] = 311, /* lp.it_lim */
+    LPX_K_ITCNT = exports["LPX_K_ITCNT"] = 312, /* lp.it_cnt */
+    LPX_K_TMLIM = exports["LPX_K_TMLIM"] = 313, /* lp.tm_lim */
+    LPX_K_OUTFRQ = exports["LPX_K_OUTFRQ"] = 314, /* lp.out_frq */
+    LPX_K_OUTDLY = exports["LPX_K_OUTDLY"] = 315, /* lp.out_dly */
+    LPX_K_BRANCH = exports["LPX_K_BRANCH"] = 316, /* lp.branch */
+    LPX_K_BTRACK = exports["LPX_K_BTRACK"] = 317, /* lp.btrack */
+    LPX_K_TOLINT = exports["LPX_K_TOLINT"] = 318, /* lp.tol_int */
+    LPX_K_TOLOBJ = exports["LPX_K_TOLOBJ"] = 319, /* lp.tol_obj */
+    LPX_K_MPSINFO = exports["LPX_K_MPSINFO"] = 320, /* lp.mps_info */
+    LPX_K_MPSOBJ = exports["LPX_K_MPSOBJ"] = 321, /* lp.mps_obj */
+    LPX_K_MPSORIG = exports["LPX_K_MPSORIG"] = 322, /* lp.mps_orig */
+    LPX_K_MPSWIDE = exports["LPX_K_MPSWIDE"] = 323, /* lp.mps_wide */
+    LPX_K_MPSFREE = exports["LPX_K_MPSFREE"] = 324, /* lp.mps_free */
+    LPX_K_MPSSKIP = exports["LPX_K_MPSSKIP"] = 325, /* lp.mps_skip */
+    LPX_K_LPTORIG = exports["LPX_K_LPTORIG"] = 326, /* lp.lpt_orig */
+    LPX_K_PRESOL = exports["LPX_K_PRESOL"] = 327, /* lp.presol */
+    LPX_K_BINARIZE = exports["LPX_K_BINARIZE"] = 328, /* lp.binarize */
+    LPX_K_USECUTS = exports["LPX_K_USECUTS"] = 329, /* lp.use_cuts */
+    LPX_K_BFTYPE = exports["LPX_K_BFTYPE"] = 330, /* lp.bfcp.type */
+    LPX_K_MIPGAP = exports["LPX_K_MIPGAP"] = 331, /* lp.mip_gap */
 
-    LPX_C_COVER = exports.LPX_C_COVER = 0x01, /* mixed cover cuts */
-    LPX_C_CLIQUE = exports.LPX_C_CLIQUE = 0x02, /* clique cuts */
-    LPX_C_GOMORY = exports.LPX_C_GOMORY = 0x04, /* Gomory's mixed integer cuts */
-    LPX_C_MIR = exports.LPX_C_MIR = 0x08, /* mixed integer rounding cuts */
-    LPX_C_ALL = exports.LPX_C_ALL = 0xFF;
+    LPX_C_COVER = exports["LPX_C_COVER"] = 0x01, /* mixed cover cuts */
+    LPX_C_CLIQUE = exports["LPX_C_CLIQUE"] = 0x02, /* clique cuts */
+    LPX_C_GOMORY = exports["LPX_C_GOMORY"] = 0x04, /* Gomory's mixed integer cuts */
+    LPX_C_MIR = exports["LPX_C_MIR"] = 0x08, /* mixed integer rounding cuts */
+    LPX_C_ALL = exports["LPX_C_ALL"] = 0xFF;
 
 function gcd(x, y){
     var r;
@@ -16249,6 +16232,7 @@ var
 function mpl_internal_create_operands(){
     return {index: {},par: {},set: {},var_: {},con: {},arg: {},loop: {}};
 }
+
 /* glpmpl01.c */
 
 /**********************************************************************/
@@ -24041,42 +24025,42 @@ function mpl_internal_eval_formula(mpl, code){
 /* * *                        DATA TABLES                         * * */
 /**********************************************************************/
 
-var mpl_tab_num_args = exports.mpl_tab_num_args = function(dca){
+var mpl_tab_num_args = exports["mpl_tab_num_args"] = function(dca){
     /* returns the number of arguments */
     return dca.na;
 };
 
-var mpl_tab_get_arg = exports.mpl_tab_get_arg = function(dca, k){
+var mpl_tab_get_arg = exports["mpl_tab_get_arg"] = function(dca, k){
     /* returns pointer to k-th argument */
     xassert(1 <= k && k <= dca.na);
     return dca.arg[k];
 };
 
-var mpl_tab_num_flds = exports.mpl_tab_num_flds = function (dca){
+var mpl_tab_num_flds = exports["mpl_tab_num_flds"] = function (dca){
     /* returns the number of fields */
     return dca.nf;
 };
 
-var mpl_tab_get_name = exports.mpl_tab_get_name = function(dca, k)
+var mpl_tab_get_name = exports["mpl_tab_get_name"] = function(dca, k)
 {     /* returns pointer to name of k-th field */
     xassert(1 <= k && k <= dca.nf);
     return dca.name[k];
 };
 
-var mpl_tab_get_type = exports.mpl_tab_get_type = function(dca, k)
+var mpl_tab_get_type = exports["mpl_tab_get_type"] = function(dca, k)
 {     /* returns type of k-th field */
     xassert(1 <= k && k <= dca.nf);
     return dca.type[k];
 };
 
-var mpl_tab_get_num = exports.mpl_tab_get_num = function(dca, k){
+var mpl_tab_get_num = exports["mpl_tab_get_num"] = function(dca, k){
     /* returns numeric value of k-th field */
     xassert(1 <= k && k <= dca.nf);
     xassert(dca.type[k] == 'N');
     return dca.num[k];
 };
 
-var mpl_tab_get_str = exports.mpl_tab_get_str = function(dca, k){
+var mpl_tab_get_str = exports["mpl_tab_get_str"] = function(dca, k){
     /* returns pointer to string value of k-th field */
     xassert(1 <= k && k <= dca.nf);
     xassert(dca.type[k] == 'S');
@@ -24084,7 +24068,7 @@ var mpl_tab_get_str = exports.mpl_tab_get_str = function(dca, k){
     return dca.str[k];
 };
 
-var mpl_tab_set_num = exports.mpl_tab_set_num = function(dca, k, num){
+var mpl_tab_set_num = exports["mpl_tab_set_num"] = function(dca, k, num){
     /* assign numeric value to k-th field */
     xassert(1 <= k && k <= dca.nf);
     xassert(dca.type[k] == '?');
@@ -24092,7 +24076,7 @@ var mpl_tab_set_num = exports.mpl_tab_set_num = function(dca, k, num){
     dca.num[k] = num;
 };
 
-var mpl_tab_set_str = exports.mpl_tab_set_str = function(dca, k, str){
+var mpl_tab_set_str = exports["mpl_tab_set_str"] = function(dca, k, str){
     /* assign string value to k-th field */
     xassert(1 <= k && k <= dca.nf);
     xassert(dca.type[k] == '?');
@@ -24809,6 +24793,7 @@ function mpl_internal_execute_statement(mpl, stmt){
             xassert(stmt != stmt);
     }
 }
+
 /* glpmpl04.c */
 
 /**********************************************************************/
@@ -25090,7 +25075,7 @@ function mpl_internal_warning(mpl, msg){
     }
 }
 
-var mpl_initialize = exports.mpl_initialize = function(){
+var mpl_initialize = exports["mpl_initialize"] = function(){
     var mpl = {};
     /* scanning segment */
     mpl.line = 0;
@@ -25158,7 +25143,7 @@ var mpl_initialize = exports.mpl_initialize = function(){
     return mpl;
 };
 
-var mpl_read_model = function(mpl, name, callback, skip_data){
+var mpl_read_model = exports["mpl_read_model"] = function(mpl, name, callback, skip_data){
 
     function skip(){
         xprintf(mpl.line + " line" + (mpl.line == 1 ? "" : "s") + " were read");
@@ -25205,7 +25190,7 @@ var mpl_read_model = function(mpl, name, callback, skip_data){
     return skip();
 };
 
-var mpl_read_data = function(mpl, name, callback){
+var mpl_read_data = exports["mpl_read_data"] = function(mpl, name, callback){
     if (!(mpl.phase == 1 || mpl.phase == 2))
         xerror("mpl_read_data: invalid call sequence");
     if (callback == null)
@@ -25231,7 +25216,7 @@ var mpl_read_data = function(mpl, name, callback){
     return mpl.phase;
 };
 
-var mpl_generate = exports.mpl_generate = function(mpl, name, callback){
+var mpl_generate = exports["mpl_generate"] = function(mpl, name, callback){
     if (!(mpl.phase == 1 || mpl.phase == 2))
         xerror("mpl_generate: invalid call sequence");
     /* generate model */
@@ -25247,23 +25232,23 @@ var mpl_generate = exports.mpl_generate = function(mpl, name, callback){
     return mpl.phase;
 };
 
-var mpl_get_prob_name = exports.mpl_get_prob_name = function(mpl){
+var mpl_get_prob_name = exports["mpl_get_prob_name"] = function(mpl){
     return mpl.mod_file;
 };
 
-var mpl_get_num_rows = exports.mpl_get_num_rows = function(mpl){
+var mpl_get_num_rows = exports["mpl_get_num_rows"] = function(mpl){
     if (mpl.phase != 3)
         xerror("mpl_get_num_rows: invalid call sequence");
     return mpl.m;
 };
 
-var mpl_get_num_cols = exports.mpl_get_num_cols = function(mpl){
+var mpl_get_num_cols = exports["mpl_get_num_cols"] = function(mpl){
     if (mpl.phase != 3)
         xerror("mpl_get_num_cols: invalid call sequence");
     return mpl.n;
 };
 
-var mpl_get_row_name = exports.mpl_get_row_name = function(mpl, i){
+var mpl_get_row_name = exports["mpl_get_row_name"] = function(mpl, i){
     if (mpl.phase != 3)
         xerror("mpl_get_row_name: invalid call sequence");
     if (!(1 <= i && i <= mpl.m))
@@ -25277,7 +25262,7 @@ var mpl_get_row_name = exports.mpl_get_row_name = function(mpl, i){
     return name;
 };
 
-var mpl_get_row_kind = mpl_get_row_kind = function(mpl, i){
+var mpl_get_row_kind = exports["mpl_get_row_kind"] = function(mpl, i){
     var kind;
     if (mpl.phase != 3)
         xerror("mpl_get_row_kind: invalid call sequence");
@@ -25296,7 +25281,7 @@ var mpl_get_row_kind = mpl_get_row_kind = function(mpl, i){
     return kind;
 };
 
-var mpl_get_row_bnds = exports.mpl_get_row_bnds = function(mpl, i, callback){
+var mpl_get_row_bnds = exports["mpl_get_row_bnds"] = function(mpl, i, callback){
     var con;
     var type;
     var lb, ub;
@@ -25324,7 +25309,7 @@ var mpl_get_row_bnds = exports.mpl_get_row_bnds = function(mpl, i, callback){
     return type;
 };
 
-var mpl_get_mat_row = exports.mpl_get_mat_row = function(mpl, i, ndx, val){
+var mpl_get_mat_row = exports["mpl_get_mat_row"] = function(mpl, i, ndx, val){
     var term;
     var len = 0;
     if (mpl.phase != 3)
@@ -25341,7 +25326,7 @@ var mpl_get_mat_row = exports.mpl_get_mat_row = function(mpl, i, ndx, val){
     return len;
 };
 
-var mpl_get_row_c0 = exports.mpl_get_row_c0 = function(mpl, i){
+var mpl_get_row_c0 = exports["mpl_get_row_c0"] = function(mpl, i){
     var con;
     var c0;
     if (mpl.phase != 3)
@@ -25356,7 +25341,7 @@ var mpl_get_row_c0 = exports.mpl_get_row_c0 = function(mpl, i){
     return c0;
 };
 
-var mpl_get_col_name = exports.mpl_get_col_name = function(mpl, j){
+var mpl_get_col_name = exports["mpl_get_col_name"] = function(mpl, j){
     if (mpl.phase != 3)
         xerror("mpl_get_col_name: invalid call sequence");
     if (!(1 <= j && j <= mpl.n))
@@ -25370,7 +25355,7 @@ var mpl_get_col_name = exports.mpl_get_col_name = function(mpl, j){
     return name;
 };
 
-var mpl_get_col_kind = exports.mpl_get_col_kind = function(mpl, j){
+var mpl_get_col_kind = exports["mpl_get_col_kind"] = function(mpl, j){
     var kind;
     if (mpl.phase != 3)
         xerror("mpl_get_col_kind: invalid call sequence");
@@ -25389,7 +25374,7 @@ var mpl_get_col_kind = exports.mpl_get_col_kind = function(mpl, j){
     return kind;
 };
 
-var mpl_get_col_bnds = exports.mpl_get_col_bnds = function(mpl, j, callback){
+var mpl_get_col_bnds = exports["mpl_get_col_bnds"] = function(mpl, j, callback){
     var var_;
     var type;
     var lb, ub;
@@ -25417,13 +25402,13 @@ var mpl_get_col_bnds = exports.mpl_get_col_bnds = function(mpl, j, callback){
     return type;
 };
 
-var mpl_has_solve_stmt = exports.mpl_has_solve_stmt = function(mpl){
+var mpl_has_solve_stmt = exports["mpl_has_solve_stmt"] = function(mpl){
     if (mpl.phase != 3)
         xerror("mpl_has_solve_stmt: invalid call sequence");
     return mpl.flag_s;
 };
 
-var mpl_put_row_soln = exports.mpl_put_row_soln = function(mpl, i, stat, prim, dual){
+var mpl_put_row_soln = exports["mpl_put_row_soln"] = function(mpl, i, stat, prim, dual){
     /* store row (constraint/objective) solution components */
     xassert(mpl.phase == 3);
     xassert(1 <= i && i <= mpl.m);
@@ -25432,7 +25417,7 @@ var mpl_put_row_soln = exports.mpl_put_row_soln = function(mpl, i, stat, prim, d
     mpl.row[i].dual = dual;
 };
 
-var mpl_put_col_soln = exports.mpl_put_col_soln = function (mpl, j, stat, prim, dual){
+var mpl_put_col_soln = exports["mpl_put_col_soln"] = function (mpl, j, stat, prim, dual){
     /* store column (variable) solution components */
     xassert(mpl.phase == 3);
     xassert(1 <= j && j <= mpl.n);
@@ -25441,7 +25426,7 @@ var mpl_put_col_soln = exports.mpl_put_col_soln = function (mpl, j, stat, prim, 
     mpl.col[j].dual = dual;
 };
 
-var mpl_postsolve = exports.mpl_postsolve = function(mpl){
+var mpl_postsolve = exports["mpl_postsolve"] = function(mpl){
     if (!(mpl.phase == 3 && !mpl.flag_p))
         xerror("mpl_postsolve: invalid call sequence");
     /* perform postsolving */
@@ -25452,6 +25437,7 @@ var mpl_postsolve = exports.mpl_postsolve = function(mpl){
     /* return to the calling program */
     return mpl.phase;
 };
+
 /* glpmpl05.c */
 
 function mpl_internal_fn_gmtime(mpl){
@@ -25961,9 +25947,11 @@ function mpl_internal_fn_time2str(mpl, t, fmt){
     }
     return str;
 }
+
 function npp_error(){
 
 }
+
 
 function npp_create_wksp(){
     /* create LP/MIP preprocessor workspace */
@@ -26721,6 +26709,7 @@ function npp_unload_sol(npp, orig){
     else
         xassert(npp != npp);
 }
+
 
 function npp_free_row(npp, p){
     /* process free (unbounded) row */
@@ -30105,7 +30094,7 @@ function scf_reset_it(scf){
     scf.n = scf.rank = 0;
 }
 
-var glp_scale_prob = exports.glp_scale_prob = function(lp, flags){
+var glp_scale_prob = exports["glp_scale_prob"] = function(lp, flags){
     function min_row_aij(lp, i, scaled){
         var aij;
         var min_aij, temp;

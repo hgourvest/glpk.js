@@ -1,6 +1,6 @@
 
 
-var glpk = require('../dist/glpk.js');
+var glpk = require('../dist/glpk.min.js');
 var fs = require('fs');
 
 
@@ -46,9 +46,9 @@ function readMathprogFromFile(tran, filename, skip){
 }
 
 
-test1 = function (){
+cplex = function(file){
     var lp = glpk.glp_create_prob();
-    readCplexFromFile(lp, __dirname + "/gap.lpt");
+    readCplexFromFile(lp, __dirname + "/" + file);
     var smcp = {};
     glpk.glp_init_smcp(smcp);
     smcp.presolve = glpk.GLP_ON;
@@ -64,7 +64,6 @@ test1 = function (){
     for( var i = 1; i <= glpk.glp_get_num_cols(lp); i++){
         console.log(glpk.glp_get_col_name(lp, i)  + " = " + glpk.glp_mip_col_val(lp, i));
     }
-    glpk.glp_delete_prob(lp);
 };
 
 mathprog = function (file){
@@ -78,7 +77,7 @@ mathprog = function (file){
     /* build the problem instance from the model */
     glpk.glp_mpl_build_prob(tran, lp);
 
-    saveToFile(lp, __dirname + '/todd.lpt');
+    //saveToFile(lp, __dirname + '/tood.lpt');
 
     glpk.glp_scale_prob(lp);
 
@@ -109,3 +108,4 @@ mathprog = function (file){
 
 require("repl").start("");
 mathprog("todd.mod");
+//cplex("todd.lpt");
