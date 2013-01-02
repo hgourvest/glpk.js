@@ -71,13 +71,12 @@ mathprog = function (file){
     var tran = glpk.glp_mpl_alloc_wksp();
     glpk._glp_mpl_init_rand(tran, 1);
     readMathprogFromFile(tran, __dirname + "/" + file, false);
-    //glpk.glp_mpl_read_data(tran, )
 
     glpk.glp_mpl_generate(tran, null, console.log);
     /* build the problem instance from the model */
     glpk.glp_mpl_build_prob(tran, lp);
 
-    //saveToFile(lp, __dirname + '/tood.lpt');
+    //saveToFile(lp, __dirname + '/todd.lpt');
 
     glpk.glp_scale_prob(lp);
 
@@ -104,8 +103,7 @@ mathprog = function (file){
 
 };
 
-
-
 require("repl").start("");
+glpk.glp_set_print_func(console.log);
 mathprog("todd.mod");
 //cplex("todd.lpt");

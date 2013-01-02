@@ -2,8 +2,6 @@
 * https://github.com/hgourvest/glpk.js
 * Copyright (c) 2012 Henri Gourvest; Licensed GPLv2 */
 (function(exports) {
-var GLP_DEBUG = true;
-
 function xassert(test){
     if (!test){
         throw new Error('assert');
@@ -11,6 +9,7 @@ function xassert(test){
 }
 
 var
+    GLP_DEBUG = false,
     DBL_MAX = Number.MAX_VALUE,
     DBL_MIN = Number.MIN_VALUE,
     DBL_DIG = 16,
@@ -36,11 +35,11 @@ function xerror(message){
 }
 
 var xprintf = function(data){
-    console.log(data);
+
 };
 
-exports.__defineGetter__("glp_print_func", function(){return xprintf});
-exports.__defineSetter__("glp_print_func", function(value){xprintf = value});
+exports["glp_get_print_func"] = function(){return xprintf};
+exports["glp_set_print_func"] = function(value){xprintf = value};
 
 function xcopyObj(dest, src){
     for (var prop in src){dest[prop] = src[prop];}
@@ -25014,16 +25013,16 @@ function mpl_internal_open_output(mpl, name, callback){
             mpl_internal_error(mpl, "unable to use output callback");
         mpl.out_file = name;
     }
-    mpl.flush = '';
+    mpl.out_buffer = '';
 }
 
 function mpl_internal_write_char(mpl, c){
     xassert(mpl.out_fp != null);
     if (c == '\n'){
-        mpl.out_fp(mpl.flush);
-        mpl.flush = '';
+        mpl.out_fp(mpl.out_buffer);
+        mpl.out_buffer = '';
     } else
-        mpl.flush += c;
+        mpl.out_buffer += c;
 }
 
 function mpl_internal_write_text(mpl, str){
@@ -25033,6 +25032,10 @@ function mpl_internal_write_text(mpl, str){
 
 function mpl_internal_flush_output(mpl){
     xassert(mpl.out_fp != null);
+    if (mpl.out_buffer.length > 0){
+        mpl.out_fp(mpl.out_buffer);
+        mpl.out_buffer = '';
+    }
 }
 
 /**********************************************************************/
@@ -25040,23 +25043,26 @@ function mpl_internal_flush_output(mpl){
 /**********************************************************************/
 
 function mpl_internal_error(mpl, msg){
-    var str;
+    var error;
     switch (mpl.phase)
     {  case 1:
         case 2:
             /* translation phase */
-            str = mpl.in_file + ":" + mpl.line + ": " + msg;
+            error = new Error(mpl.in_file + ":" + mpl.line + ": " + msg);
+            error["line"] = mpl.line;
             mpl_internal_print_context(mpl);
             break;
         case 3:
             /* generation/postsolve phase */
-            str = (mpl.stmt == null ? 0 : mpl.stmt.line) + ": " + msg;
+            var line = (mpl.stmt == null ? 0 : mpl.stmt.line);
+            error = new Error(line + ": " + msg);
+            error["line"] = line;
             break;
         default:
             xassert(mpl != mpl);
     }
     mpl.phase = 4;
-    throw new Error(msg);
+    throw error;
 }
 
 function mpl_internal_warning(mpl, msg){
