@@ -3,9 +3,11 @@ importScripts('glpk.min.js');
 var lp;
 
 self.addEventListener('message', function(e) {
-    var log = glp_print_func = function(value){
+    function log(value){
         self.postMessage({action: 'log', message: value});
-    };
+    }
+
+    glp_set_print_func(log);
 
     var obj = e.data;
     switch (obj.action){
