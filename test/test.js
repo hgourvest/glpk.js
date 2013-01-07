@@ -49,17 +49,12 @@ function readMathprogFromFile(tran, filename, skip){
 cplex = function(file){
     var lp = glpk.glp_create_prob();
     readCplexFromFile(lp, __dirname + "/" + file);
-    var smcp = {};
-    glpk.glp_init_smcp(smcp);
-    smcp.presolve = glpk.GLP_ON;
+    var smcp = new glpk.SMCP({presolve: glpk.GLP_ON});
     glpk.glp_simplex(lp, smcp);
 
-    var iocp = {};
-    glpk.glp_init_iocp(iocp);
-    iocp.presolve = glpk.GLP_ON;
-
-
+    var iocp = new glpk.IOCP({presolve: glpk.GLP_ON});
     glpk.glp_intopt(lp, iocp);
+
     console.log("obj: " + glpk.glp_mip_obj_val(lp));
     for( var i = 1; i <= glpk.glp_get_num_cols(lp); i++){
         console.log(glpk.glp_get_col_name(lp, i)  + " = " + glpk.glp_mip_col_val(lp, i));
@@ -80,20 +75,21 @@ mathprog = function (file){
 
     glpk.glp_scale_prob(lp);
 
-    var smcp = {};
-    glpk.glp_init_smcp(smcp);
-    smcp.presolve = glpk.GLP_ON;
+    var smcp = new glpk.SMCP({presolve: glpk.GLP_ON});
+
     glpk.glp_simplex(lp, smcp);
 
-    var iocp = {};
-    glpk.glp_init_iocp(iocp);
-    iocp.presolve = glpk.GLP_ON;
-    iocp.cb_func = function(tree){
-        if (tree.reason == glpk.GLP_IBINGO){
-           var objective = glpk.glp_mip_obj_val(tree.mip);
-          // console.log("@@@" + objective);
-       }
-    };
+    var iocp = new glpk.IOCP({
+        presolve: glpk.GLP_ON,
+        cb_func: function(tree){
+            if (glpk.glp_ios_reason(tree) == glpk.GLP_IBINGO){
+                var objective = glpk.glp_mip_obj_val(glpk.glp_ios_get_prob(tree));
+                //console.log("@@@" + objective);
+
+            }
+        }
+    });
+
     glpk.glp_intopt(lp, iocp);
     glpk.glp_mpl_postsolve(tran, lp, glpk.GLP_MIP);
     console.log("obj: " + glpk.glp_mip_obj_val(lp));
