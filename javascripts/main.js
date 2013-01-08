@@ -19,17 +19,11 @@ self.addEventListener('message', function(e) {
             
                 glp_scale_prob(lp, GLP_SF_AUTO);
             
-                //var smcp = {};
-                //glp_init_smcp(smcp);
-                //smcp.presolve = GLP_ON;
-                glp_simplex(lp, null);
+                var smcp = new SMCP({presolve: GLP_ON});
+                glp_simplex(lp, smcp);
 
                 if (obj.mip){
-                    //var iocp = {};
-                    //glp_init_iocp(iocp);
-                    //iocp.presolve = GLP_ON;
-                    glp_intopt(lp, null);
-                
+                    glp_intopt(lp);
                     objective = glp_mip_obj_val(lp);
                     for(i = 1; i <= glp_get_num_cols(lp); i++){
                         result[glp_get_col_name(lp, i)] = glp_mip_col_val(lp, i);
@@ -41,7 +35,6 @@ self.addEventListener('message', function(e) {
                     }
                 }
 
-                glp_delete_prob(lp);
                 lp = null;
             
             } catch(err) {
