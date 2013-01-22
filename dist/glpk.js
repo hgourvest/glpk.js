@@ -8,6 +8,8 @@ function xassert(test){
     }
 }
 
+
+
 var
     /** @const */GLP_DEBUG = false,
     /** @const */DBL_MAX = Number.MAX_VALUE,
@@ -898,16 +900,11 @@ var glp_check_dup = exports["glp_check_dup"] = function(m, n, ne, ia, ja){
     next = new Int32Array(1+ne);
     flag = new Int8Array(1+n);
     /* build row lists */
-    for (i = 1; i <= m; i++)
-        ptr[i] = 0;
     for (k = 1; k <= ne; k++){
         i = ia[k];
         next[k] = ptr[i];
         ptr[i] = k;
     }
-    /* clear column flags */
-    for (j = 1; j <= n; j++)
-        flag[j] = 0;
     /* check for duplicate elements */
     for (i = 1; i <= m; i++){
         for (k = ptr[i]; k != 0; k = next[k]){
@@ -3006,8 +3003,6 @@ var glp_warm_up = exports["glp_warm_up"] = function(P){
     /* determine and store values of non-basic variables, compute
      vector (- N * xN) */
     for (i = 1; i <= P.m; i++)
-        work[i] = 0.0;
-    for (i = 1; i <= P.m; i++)
     {  row = P.row[i];
         if (row.stat == GLP_BS)
             continue;
@@ -3157,7 +3152,6 @@ var glp_eval_tab_row = exports["glp_eval_tab_row"] = function(lp, k, ind, val){
     iii = new Int32Array(1+m);
     vvv = new Float64Array(1+m);
     /* compute i-th row of the inverse; see (8) */
-    for (t = 1; t <= m; t++) rho[t] = 0.0;
     rho[i] = 1.0;
     glp_btran(lp, rho);
     /* compute i-th row of the simplex table */
@@ -3207,7 +3201,6 @@ var glp_eval_tab_col = exports["glp_eval_tab_col"] = function(lp, k, ind, val){
         xerror("glp_eval_tab_col: k = " + k + "; variable must be non-basic");
     /* obtain column N[k] with negative sign */
     col = new Float64Array(1+m);
-    for (t = 1; t <= m; t++) col[t] = 0.0;
     if (k <= m)
     {  /* x[k] is auxiliary variable, so N[k] is a unity column */
         col[k] = -1.0;
@@ -3242,7 +3235,6 @@ var glp_transform_row = exports["glp_transform_row"] = function(P, len, ind, val
     n = glp_get_num_cols(P);
     /* unpack the row to be transformed to the array a */
     a = new Float64Array(1+n);
-    for (j = 1; j <= n; j++) a[j] = 0.0;
     if (!(0 <= len && len <= n))
         xerror("glp_transform_row: len = " + len + "; invalid row length");
     for (t = 1; t <= len; t++)
@@ -3304,7 +3296,6 @@ var glp_transform_col = exports["glp_transform_col"] = function(P, len, ind, val
     m = glp_get_num_rows(P);
     /* unpack the column to be transformed to the array a */
     a = new Float64Array(1+m);
-    for (i = 1; i <= m; i++) a[i] = 0.0;
     if (!(0 <= len && len <= m))
         xerror("glp_transform_col: len = " + len + "; invalid column length");
     for (t = 1; t <= len; t++)
@@ -3694,7 +3685,7 @@ var glp_analyze_bound = exports["glp_analyze_bound"] = function(P, k, callback){
     callback(value1, var1, value2, var2)
 };
 
-var glp_analyze_coef = exports["glp_analyze_coef"] = function(P, k, out){
+var glp_analyze_coef = exports["glp_analyze_coef"] = function(P, k, callback){
     var row, col;
     var m, n, type, stat, kase, p, q, dir, clen, cpiv, rlen, rpiv, cind, rind;
     var lb, ub, coef, x, lim_coef, new_x, d, delta, ll, uu, xx, rval, cval;
@@ -6194,7 +6185,6 @@ function glp_adv_basis(lp, flags){
         /* build linked lists of columns of the matrix A with the same
          number of non-zeros */
         head = rs_len; /* currently rs_len is used as working array */
-        for (len = 0; len <= m; len ++) head[len] = 0;
         for (j = 1; j <= n; j++)
         {  /* obtain length of the j-th column */
             len = mat(info, -j, ndx);
@@ -6219,7 +6209,6 @@ function glp_adv_basis(lp, flags){
         }
         /* build initial doubly linked lists of rows of the matrix A with
          the same number of non-zeros */
-        for (len = 0; len <= n; len++) rs_head[len] = 0;
         for (i = 1; i <= m; i++)
         {  /* obtain length of the i-th row */
             rs_len[i] = len = mat(info, +i, ndx);
@@ -6625,11 +6614,6 @@ function cpx_basis(lp){
             I[i] = 1;
             r[i] = 1;
         }
-        else
-        {  /* row i is equality constraint */
-            I[i] = 0;
-            r[i] = 0;
-        }
         v[i] = +DBL_MAX;
     }
     /*** STEP 2 ***/
@@ -6849,7 +6833,6 @@ function ios_create_tree(mip, parm){
     tree.mip = mip;
     /*tree.solved = 0;*/
     tree.non_int = new Int8Array(1+n);
-    xfillArr(tree.non_int, 1, 0, n);
     /* arrays to save parent subproblem components will be allocated
      later */
     tree.pred_m = tree.pred_max = 0;
@@ -8086,9 +8069,7 @@ function ios_preprocess_node(tree, max_pass){
         ind = new Int32Array(1+n);
         list = new Int32Array(1+m+1);
         mark = new Int32Array(1+m+1);
-        xfillArr(mark, 0, 0, m+1);
         pass = new Int32Array(1+m+1);
-        xfillArr(pass, 0, 0, m+1);
         val = new Float64Array(1+n);
         lb = new Float64Array(1+n);
         ub = new Float64Array(1+n);
@@ -9221,7 +9202,6 @@ function ios_create_vec(n){
     v.n = n;
     v.nnz = 0;
     v.pos = new Int32Array(1+n);
-    xfillArr(v.pos, 1, 0, n);
     v.ind = new Int32Array(1+n);
     v.val = new Float64Array(1+n);
     return v;
@@ -9545,6 +9525,11 @@ var _MIR_DEBUG = 0;
 
 var MAXAGGR = 5;
 /* maximal number of rows which can be aggregated */
+
+var
+    MIR_N = 0,
+    MIR_L = 1,
+    MIR_U = 2;
 
 function ios_mir_init(tree){
     function set_row_attrib(tree, mir){
@@ -10044,11 +10029,11 @@ function ios_mir_gen(tree, mir){
             /* x[k] cannot be free */
             xassert(d1 != DBL_MAX || d2 != DBL_MAX);
             /* choose the bound which is closer to x[k] */
-            xassert(mir.subst[k] == '?');
+            xassert(mir.subst[k] == MIR_N);
             if (d1 <= d2)
-                mir.subst[k] = 'L';
+                mir.subst[k] = MIR_L;
             else
-                mir.subst[k] = 'U';
+                mir.subst[k] = MIR_U;
         }
     }
 
@@ -10070,7 +10055,7 @@ function ios_mir_gen(tree, mir){
         {  k = mir.mod_vec.ind[j];
             xassert(1 <= k && k <= m+n);
             if (mir.isint[k]) continue; /* skip integer variable */
-            if (mir.subst[k] == 'L')
+            if (mir.subst[k] == MIR_L)
             {  /* x[k] = (lower bound) + x'[k] */
                 xassert(mir.lb[k] != -DBL_MAX);
                 kk = mir.vlb[k];
@@ -10091,7 +10076,7 @@ function ios_mir_gen(tree, mir){
                         mir.mod_vec.val[j] * mir.lb[k];
                 }
             }
-            else if (mir.subst[k] == 'U')
+            else if (mir.subst[k] == MIR_U)
             {  /* x[k] = (upper bound) - x'[k] */
                 xassert(mir.ub[k] != +DBL_MAX);
                 kk = mir.vub[k];
@@ -10124,17 +10109,17 @@ function ios_mir_gen(tree, mir){
         {  k = mir.mod_vec.ind[j];
             xassert(1 <= k && k <= m+n);
             if (!mir.isint[k]) continue; /* skip continuous variable */
-            xassert(mir.subst[k] == '?');
+            xassert(mir.subst[k] == MIR_N);
             xassert(mir.vlb[k] == 0 && mir.vub[k] == 0);
             xassert(mir.lb[k] != -DBL_MAX && mir.ub[k] != +DBL_MAX);
             if (Math.abs(mir.lb[k]) <= Math.abs(mir.ub[k]))
             {  /* x[k] = lb[k] + x'[k] */
-                mir.subst[k] = 'L';
+                mir.subst[k] = MIR_L;
                 mir.mod_rhs -= mir.mod_vec.val[j] * mir.lb[k];
             }
             else
             {  /* x[k] = ub[k] - x'[k] */
-                mir.subst[k] = 'U';
+                mir.subst[k] = MIR_U;
                 mir.mod_rhs -= mir.mod_vec.val[j] * mir.ub[k];
                 mir.mod_vec.val[j] = - mir.mod_vec.val[j];
             }
@@ -10157,7 +10142,7 @@ function ios_mir_gen(tree, mir){
             for (j = 1; j <= mir.mod_vec.nnz; j++)
             {  k = mir.mod_vec.ind[j];
                 xassert(1 <= k && k <= m+n);
-                if (mir.subst[k] == 'L')
+                if (mir.subst[k] == MIR_L)
                 {  /* x'[k] = x[k] - (lower bound) */
                     xassert(mir.lb[k] != -DBL_MAX);
                     kk = mir.vlb[k];
@@ -10166,7 +10151,7 @@ function ios_mir_gen(tree, mir){
                     else
                         x = mir.x[k] - mir.lb[k] * mir.x[kk];
                 }
-                else if (mir.subst[k] == 'U')
+                else if (mir.subst[k] == MIR_U)
                 {  /* x'[k] = (upper bound) - x[k] */
                     xassert(mir.ub[k] != +DBL_MAX);
                     kk = mir.vub[k];
@@ -10250,9 +10235,9 @@ function ios_mir_gen(tree, mir){
             xassert(mir.isint[k]);
             u[j] = mir.ub[k] - mir.lb[k];
             xassert(u[j] >= 1.0);
-            if (mir.subst[k] == 'L')
+            if (mir.subst[k] == MIR_L)
                 x[j] = mir.x[k] - mir.lb[k];
-            else if (mir.subst[k] == 'U')
+            else if (mir.subst[k] == MIR_U)
                 x[j] = mir.ub[k] - mir.x[k];
             else
                 xassert(k != k);
@@ -10267,7 +10252,7 @@ function ios_mir_gen(tree, mir){
             xassert(1 <= k && k <= m+n);
             /* must be continuous */
             xassert(!mir.isint[k]);
-            if (mir.subst[k] == 'L')
+            if (mir.subst[k] == MIR_L)
             {  xassert(mir.lb[k] != -DBL_MAX);
                 kk = mir.vlb[k];
                 if (kk == 0)
@@ -10275,7 +10260,7 @@ function ios_mir_gen(tree, mir){
                 else
                     x = mir.x[k] - mir.lb[k] * mir.x[kk];
             }
-            else if (mir.subst[k] == 'U')
+            else if (mir.subst[k] == MIR_U)
             {  xassert(mir.ub[k] != +DBL_MAX);
                 kk = mir.vub[k];
                 if (kk == 0)
@@ -10323,7 +10308,7 @@ function ios_mir_gen(tree, mir){
             for (j = 1; j <= mir.cut_vec.nnz; j++)
             {  k = mir.cut_vec.ind[j];
                 xassert(1 <= k && k <= m+n);
-                if (mir.subst[k] == 'L')
+                if (mir.subst[k] == MIR_L)
                 {  xassert(mir.lb[k] != -DBL_MAX);
                     kk = mir.vlb[k];
                     if (kk == 0)
@@ -10331,7 +10316,7 @@ function ios_mir_gen(tree, mir){
                     else
                         x = mir.x[k] - mir.lb[k] * mir.x[kk];
                 }
-                else if (mir.subst[k] == 'U')
+                else if (mir.subst[k] == MIR_U)
                 {  xassert(mir.ub[k] != +DBL_MAX);
                     kk = mir.vub[k];
                     if (kk == 0)
@@ -10365,13 +10350,13 @@ function ios_mir_gen(tree, mir){
         {  k = mir.cut_vec.ind[j];
             xassert(1 <= k && k <= m+n);
             if (!mir.isint[k]) continue; /* skip continuous */
-            if (mir.subst[k] == 'L')
+            if (mir.subst[k] == MIR_L)
             {  /* x'[k] = x[k] - lb[k] */
                 xassert(mir.lb[k] != -DBL_MAX);
                 xassert(mir.vlb[k] == 0);
                 mir.cut_rhs += mir.cut_vec.val[j] * mir.lb[k];
             }
-            else if (mir.subst[k] == 'U')
+            else if (mir.subst[k] == MIR_U)
             {  /* x'[k] = ub[k] - x[k] */
                 xassert(mir.ub[k] != +DBL_MAX);
                 xassert(mir.vub[k] == 0);
@@ -10386,7 +10371,7 @@ function ios_mir_gen(tree, mir){
         {  k = mir.cut_vec.ind[j];
             xassert(1 <= k && k <= m+n);
             if (mir.isint[k]) continue; /* skip integer */
-            if (mir.subst[k] == 'L')
+            if (mir.subst[k] == MIR_L)
             {  /* x'[k] = x[k] - (lower bound) */
                 xassert(mir.lb[k] != -DBL_MAX);
                 kk = mir.vlb[k];
@@ -10407,7 +10392,7 @@ function ios_mir_gen(tree, mir){
                         mir.lb[k];
                 }
             }
-            else if (mir.subst[k] == 'U')
+            else if (mir.subst[k] == MIR_U)
             {  /* x'[k] = (upper bound) - x[k] */
                 xassert(mir.ub[k] != +DBL_MAX);
                 kk = mir.vub[k];
@@ -10622,7 +10607,7 @@ function ios_mir_gen(tree, mir){
         check_current_point(mir);
     }
     /* reset bound substitution flags */
-    xfillArr(mir.subst, 1, '?', m+n);
+    xfillArr(mir.subst, 1, MIR_N, m+n);
     /* try to generate a set of violated MIR cuts */
     for (i = 1; i <= m; i++)
     {  if (mir.skip[i]) continue;
@@ -10641,7 +10626,7 @@ function ios_mir_gen(tree, mir){
                 /* check bound substitution flags */
                 {
                     for (k = 1; k <= m+n; k++)
-                        xassert(mir.subst[k] == '?');
+                        xassert(mir.subst[k] == MIR_N);
                 }
             }
             /* apply bound substitution heuristic */
@@ -10680,8 +10665,8 @@ function ios_mir_gen(tree, mir){
                 for (var j = 1; j <= mir.mod_vec.nnz; j++)
                 {  k = mir.mod_vec.ind[j];
                     xassert(1 <= k && k <= m+n);
-                    xassert(mir.subst[k] != '?');
-                    mir.subst[k] = '?';
+                    xassert(mir.subst[k] != MIR_N);
+                    mir.subst[k] = MIR_N;
                 }
             }
             if (r_best == 0.0)
@@ -11252,7 +11237,6 @@ function lpx_create_cog(lp){
      conflict graph */
     nb = 0;
     vert = new Int32Array(1+n);
-    for (j = 1; j <= n; j++) vert[j] = 0;
     orig = new Int32Array(1+n);
     ind = new Int32Array(1+n);
     val = new Float64Array(1+n);
@@ -11298,7 +11282,6 @@ function lpx_create_cog(lp){
     len = (len * (len - 1)) / 2; /* number of entries in triangle */
     len = (len + (CHAR_BIT - 1)) / CHAR_BIT; /* bytes needed */
     cog.a = new Array(len);
-    xfillArr(cog.a, 0, 0, len);
     for (j = 1; j <= nb; j++)
     {  /* add edge between variable and its complement */
         lpx_add_cog_edge(cog, +orig[j], -orig[j]);
@@ -11537,7 +11520,6 @@ function lpx_clique_cut(lp, cog, ind, val){
      clique greater than 1, the clique cut is violated */
     if (sum >= 1.01)
     {  /* construct the inquality */
-        for (j = 1; j <= n; j++) vec[j] = 0;
         b = 1.0;
         for (t = 1; t <= card; t++)
         {  v = sol[t];
@@ -12438,7 +12420,6 @@ function ios_process_cuts(T){
     ind = new Int32Array(1+T.n);
     val = new Float64Array(1+T.n);
     work = new Float64Array(1+T.n);
-    for (k = 1; k <= T.n; k++) work[k] = 0.0;
     /* build the list of cuts stored in the cut pool */
     for (k = 0, cut = pool.head; cut != null; cut = cut.next){
         k++; info[k].cut = cut; info[k].flag = 0;
@@ -24240,7 +24221,7 @@ function mpl_internal_execute_table(mpl, tab){
             for (in_ = tab.u.in_.list; in_ != null; in_ = in_.next)
                 dca.nf++;
             dca.name = new Array(1+dca.nf);
-            dca.type = new Int32Array(1+dca.nf);
+            dca.type = new Array(1+dca.nf);
             dca.num = new Float64Array(1+dca.nf);
             dca.str = new Array(1+dca.nf);
             k = 0;
@@ -24343,7 +24324,7 @@ function mpl_internal_execute_table(mpl, tab){
             for (out = tab.u.out.list; out != null; out = out.next)
                 dca.nf++;
             dca.name = new Array(1+dca.nf);
-            dca.type = new Int32Array(1+dca.nf);
+            dca.type = new Array(1+dca.nf);
             dca.num = new Float64Array(1+dca.nf);
             dca.str = new Array(1+dca.nf);
             k = 0;
