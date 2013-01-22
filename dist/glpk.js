@@ -331,7 +331,7 @@ function create_prob(lp){
     lp.c_tree = {};
     /* basis factorization */
     lp.valid = 0;
-    lp.head = new Array(1+lp.m_max);
+    lp.head = new Int32Array(1+lp.m_max);
     lp.bfcp = null;
     lp.bfd = null;
     /* basic solution (LP) */
@@ -394,7 +394,7 @@ var glp_add_rows = exports["glp_add_rows"] = function (lp, nrs){
         lp.row.length = 1+lp.m_max;
 
         /* do not forget about the basis header */
-        lp.head = new Array(1+lp.m_max);
+        lp.head = new Int32Array(1+lp.m_max);
     }
     /* add new rows to the end of the row list */
     for (var i = lp.m+1; i <= m_new; i++)
@@ -894,9 +894,9 @@ var glp_check_dup = exports["glp_check_dup"] = function(m, n, ne, ia, ja){
         return ret;
     }
     /* allocate working arrays */
-    ptr = new Array(1+m);
-    next = new Array(1+ne);
-    flag = new Array(1+n);
+    ptr = new Int32Array(1+m);
+    next = new Int32Array(1+ne);
+    flag = new Int8Array(1+n);
     /* build row lists */
     for (i = 1; i <= m; i++)
         ptr[i] = 0;
@@ -1127,8 +1127,8 @@ var glp_copy_prob = exports["glp_copy_prob"] = function(dest, prob, names){
         to.dval = from.dval;
         to.mipx = from.mipx;
     }
-    ind = new Array(1+prob.m);
-    val = new Array(1+prob.m);
+    ind = new Int32Array(1+prob.m);
+    val = new Float64Array(1+prob.m);
     for (j = 1; j <= prob.n; j++){
         to = dest.col[j];
         from = prob.col[j];
@@ -3002,7 +3002,7 @@ var glp_warm_up = exports["glp_warm_up"] = function(P){
         if (ret != 0) return ret;
     }
     /* allocate working array */
-    work = new Array(1+P.m);
+    work = new Float64Array(1+P.m);
     /* determine and store values of non-basic variables, compute
      vector (- N * xN) */
     for (i = 1; i <= P.m; i++)
@@ -3153,9 +3153,9 @@ var glp_eval_tab_row = exports["glp_eval_tab_row"] = function(lp, k, ind, val){
         xerror("glp_eval_tab_row: k = " + k + "; variable must be basic");
     xassert(1 <= i && i <= m);
     /* allocate working arrays */
-    rho = new Array(1+m);
-    iii = new Array(1+m);
-    vvv = new Array(1+m);
+    rho = new Float64Array(1+m);
+    iii = new Int32Array(1+m);
+    vvv = new Float64Array(1+m);
     /* compute i-th row of the inverse; see (8) */
     for (t = 1; t <= m; t++) rho[t] = 0.0;
     rho[i] = 1.0;
@@ -3206,7 +3206,7 @@ var glp_eval_tab_col = exports["glp_eval_tab_col"] = function(lp, k, ind, val){
     if (stat == GLP_BS)
         xerror("glp_eval_tab_col: k = " + k + "; variable must be non-basic");
     /* obtain column N[k] with negative sign */
-    col = new Array(1+m);
+    col = new Float64Array(1+m);
     for (t = 1; t <= m; t++) col[t] = 0.0;
     if (k <= m)
     {  /* x[k] is auxiliary variable, so N[k] is a unity column */
@@ -3241,7 +3241,7 @@ var glp_transform_row = exports["glp_transform_row"] = function(P, len, ind, val
     m = glp_get_num_rows(P);
     n = glp_get_num_cols(P);
     /* unpack the row to be transformed to the array a */
-    a = new Array(1+n);
+    a = new Float64Array(1+n);
     for (j = 1; j <= n; j++) a[j] = 0.0;
     if (!(0 <= len && len <= n))
         xerror("glp_transform_row: len = " + len + "; invalid row length");
@@ -3256,7 +3256,7 @@ var glp_transform_row = exports["glp_transform_row"] = function(P, len, ind, val
         a[j] = val[t];
     }
     /* construct the vector aB */
-    aB = new Array(1+m);
+    aB = new Float64Array(1+m);
     for (i = 1; i <= m; i++)
     {  k = glp_get_bhead(P, i);
         /* xB[i] is k-th original variable */
@@ -3278,8 +3278,8 @@ var glp_transform_row = exports["glp_transform_row"] = function(P, len, ind, val
     }
     }
     /* compute coefficients at non-basic structural variables */
-    iii = new Array(1+m);
-    vvv = new Array(1+m);
+    iii = new Int32Array(1+m);
+    vvv = new Float64Array(1+m);
     for (j = 1; j <= n; j++)
     {  if (glp_get_col_stat(P, j) != GLP_BS)
     {  alfa = a[j];
@@ -3303,7 +3303,7 @@ var glp_transform_col = exports["glp_transform_col"] = function(P, len, ind, val
         xerror("glp_transform_col: basis factorization does not exist ");
     m = glp_get_num_rows(P);
     /* unpack the column to be transformed to the array a */
-    a = new Array(1+m);
+    a = new Float64Array(1+m);
     for (i = 1; i <= m; i++) a[i] = 0.0;
     if (!(0 <= len && len <= m))
         xerror("glp_transform_col: len = " + len + "; invalid column length");
@@ -3633,8 +3633,8 @@ var glp_analyze_bound = exports["glp_analyze_bound"] = function(P, k, callback){
     if (stat == GLP_BS)
         xerror("glp_analyze_bound: k = " + k + "; basic variable not allowed ");
     /* allocate working arrays */
-    ind = new Array(1+m);
-    val = new Array(1+m);
+    ind = new Int32Array(1+m);
+    val = new Float64Array(1+m);
     /* compute column of the simplex table corresponding to the
      non-basic variable x[k] */
     len = glp_eval_tab_col(P, k, ind, val);
@@ -3748,10 +3748,10 @@ var glp_analyze_coef = exports["glp_analyze_coef"] = function(P, k, out){
     if (stat != GLP_BS)
         xerror("glp_analyze_coef: k = " + k + "; non-basic variable not allowed");
     /* allocate working arrays */
-    cind = new Array(1+m);
-    cval = new Array(1+m);
-    rind = new Array(1+n);
-    rval = new Array(1+n);
+    cind = new Int32Array(1+m);
+    cval = new Float64Array(1+m);
+    rind = new Int32Array(1+n);
+    rval = new Float64Array(1+n);
     /* compute row of the simplex table corresponding to the basic
      variable x[k] */
     rlen = glp_eval_tab_row(P, k, rind, rval);
@@ -3919,7 +3919,7 @@ var glp_ios_reason = exports["glp_ios_reason"] = function(tree){
     return tree.reason;
 };
 
-var glp_ios_get_prob =exports["glp_ios_get_prob"] = function(tree){
+var glp_ios_get_prob = exports["glp_ios_get_prob"] = function(tree){
     return tree.mip;
 };
 
@@ -4361,8 +4361,8 @@ var glp_mpl_build_prob = exports["glp_mpl_build_prob"] = function(tran, prob){
         glp_set_col_bnds(prob, j, type, lb, ub);
     }
     /* load the constraint matrix */
-    ind = new Array(1+n);
-    val = new Array(1+n);
+    ind = new Int32Array(1+n);
+    val = new Float64Array(1+n);
     for (i = 1; i <= m; i++)
     {  len = mpl_get_mat_row(tran, i, ind, val);
         glp_set_mat_row(prob, i, len, ind, val);
@@ -4959,16 +4959,16 @@ var glp_read_lp = exports["glp_read_lp"] = function(P, parm, callback){
                 var lb = csa.lb;
                 var ub = csa.ub;
                 csa.n_max += csa.n_max;
-                csa.ind = new Array(1+csa.n_max);
+                csa.ind = new Int32Array(1+csa.n_max);
                 xcopyArr(csa.ind, 1, ind, 1, n_max);
-                csa.val = new Array(1+csa.n_max);
+                csa.val = new Float64Array(1+csa.n_max);
                 xcopyArr(csa.val, 1, val, 1, n_max);
-                csa.flag = new Array(1+csa.n_max);
+                csa.flag = new Int8Array(1+csa.n_max);
                 xfillArr(csa.flag, 1, 0, csa.n_max);
                 xcopyArr(csa.flag, 1, flag, 1, n_max);
-                csa.lb = new Array(1+csa.n_max);
+                csa.lb = new Float64Array(1+csa.n_max);
                 xcopyArr(csa.lb, 1, lb, 1, n_max);
-                csa.ub = new Array(1+csa.n_max);
+                csa.ub = new Float64Array(1+csa.n_max);
                 xcopyArr(csa.ub, 1, ub, 1, n_max);
             }
             csa.lb[j] = +DBL_MAX; csa.ub[j] = -DBL_MAX;
@@ -5345,12 +5345,12 @@ var glp_read_lp = exports["glp_read_lp"] = function(P, parm, callback){
     csa.image = "";
     csa.value = 0.0;
     csa.n_max = 100;
-    csa.ind = new Array(1+csa.n_max);
-    csa.val = new Array(1+csa.n_max);
-    csa.flag = new Array(1+csa.n_max);
+    csa.ind = new Int32Array(1+csa.n_max);
+    csa.val = new Float64Array(1+csa.n_max);
+    csa.flag = new Int8Array(1+csa.n_max);
     xfillArr(csa.flag, 1, 0, csa.n_max);
-    csa.lb = new Array(1+csa.n_max);
-    csa.ub = new Array(1+csa.n_max);
+    csa.lb = new Float64Array(1+csa.n_max);
+    csa.ub = new Float64Array(1+csa.n_max);
     /* erase problem object */
     glp_erase_prob(P);
     glp_create_index(P);
@@ -5731,18 +5731,18 @@ function fhv_factorize(fhv, m, col, info){
     fhv.valid = 0;
     /* allocate/reallocate arrays, if necessary */
     if (fhv.hh_ind == null)
-        fhv.hh_ind = new Array(1+fhv.hh_max);
+        fhv.hh_ind = new Int32Array(1+fhv.hh_max);
     if (fhv.hh_ptr == null)
-        fhv.hh_ptr = new Array(1+fhv.hh_max);
+        fhv.hh_ptr = new Int32Array(1+fhv.hh_max);
     if (fhv.hh_len == null)
-        fhv.hh_len = new Array(1+fhv.hh_max);
+        fhv.hh_len = new Int32Array(1+fhv.hh_max);
     if (fhv.m_max < m)
     {
         fhv.m_max = m + 100;
-        fhv.p0_row = new Array(1+fhv.m_max);
-        fhv.p0_col = new Array(1+fhv.m_max);
-        fhv.cc_ind = new Array(1+fhv.m_max);
-        fhv.cc_val = new Array(1+fhv.m_max);
+        fhv.p0_row = new Int32Array(1+fhv.m_max);
+        fhv.p0_col = new Int32Array(1+fhv.m_max);
+        fhv.cc_ind = new Int32Array(1+fhv.m_max);
+        fhv.cc_val = new Float64Array(1+fhv.m_max);
     }
     /* try to factorize the basis matrix */
     switch (luf_factorize(fhv.luf, m, col, info))
@@ -6184,13 +6184,13 @@ function glp_adv_basis(lp, flags){
         if (!(m > 0 && n > 0))
             xerror("triang: m = " + m + "; n = " + n + "; invalid dimension");
         /* allocate working arrays */
-        ndx = new Array(1+(m >= n ? m : n));
-        rs_len = new Array(1+m);
-        rs_head = new Array(1+n);
-        rs_prev = new Array(1+m);
-        rs_next = new Array(1+m);
-        cs_prev = new Array(1+n);
-        cs_next = new Array(1+n);
+        ndx = new Int32Array(1+(m >= n ? m : n));
+        rs_len = new Int32Array(1+m);
+        rs_head = new Int32Array(1+n);
+        rs_prev = new Int32Array(1+m);
+        rs_next = new Int32Array(1+m);
+        cs_prev = new Int32Array(1+n);
+        cs_next = new Int32Array(1+n);
         /* build linked lists of columns of the matrix A with the same
          number of non-zeros */
         head = rs_len; /* currently rs_len is used as working array */
@@ -6417,7 +6417,7 @@ function glp_adv_basis(lp, flags){
         var n = lpx_get_num_cols(lp);
         var i, j, jj, k, size;
         var rn, cn, rn_inv, cn_inv;
-        var tagx = new Array(1+m+n);
+        var tagx = new Int32Array(1+m+n);
         xprintf("Constructing initial basis...");
         if (m == 0 || n == 0)
         {  glp_std_basis(lp);
@@ -6428,8 +6428,8 @@ function glp_adv_basis(lp, flags){
          to prevent columns of fixed variables to be included in the
          triangular part, such columns are implictly removed from the
          matrix A~ by the routine adv_mat */
-        rn = new Array(1+m);
-        cn = new Array(1+m+n);
+        rn = new Int32Array(1+m);
+        cn = new Int32Array(1+m+n);
         size = triang(m, m+n, lp, mat, rn, cn);
         if (lpx_get_int_parm(lp, LPX_K_MSGLEV) >= 3)
             xprintf("Size of triangular part = " + size + "");
@@ -6437,8 +6437,8 @@ function glp_adv_basis(lp, flags){
          P and Q are permutation matrices defined by the arrays rn and
          cn) form a lower triangular matrix; build the arrays (rn_inv
          and cn_inv), which define the matrices inv(P) and inv(Q) */
-        rn_inv = new Array(1+m);
-        cn_inv = new Array(1+m+n);
+        rn_inv = new Int32Array(1+m);
+        cn_inv = new Int32Array(1+m+n);
         for (i = 1; i <= m; i++) rn_inv[rn[i]] = i;
         for (j = 1; j <= m+n; j++) cn_inv[cn[j]] = j;
         /* include the columns of the matrix A~, which correspond to the
@@ -6519,11 +6519,11 @@ function cpx_basis(lp){
     n = glp_get_num_cols(lp);
     /* allocate working arrays */
     C = new Array(1+n);
-    I = new Array(1+m);
-    r = new Array(1+m);
-    v = new Array(1+m);
-    ind = new Array(1+m);
-    val = new Array(1+m);
+    I = new Int32Array(1+m);
+    r = new Int32Array(1+m);
+    v = new Float64Array(1+m);
+    ind = new Int32Array(1+m);
+    val = new Float64Array(1+m);
     /* make all auxiliary variables non-basic */
     for (i = 1; i <= m; i++)
     {  if (glp_get_row_type(lp, i) != GLP_DB)
@@ -6807,12 +6807,12 @@ function ios_create_tree(mip, parm){
     tree.n = n;
     /* save original problem components */
     tree.orig_m = m;
-    tree.orig_type = new Array(1+m+n);
-    tree.orig_lb = new Array(1+m+n);
-    tree.orig_ub = new Array(1+m+n);
-    tree.orig_stat = new Array(1+m+n);
-    tree.orig_prim = new Array(1+m+n);
-    tree.orig_dual = new Array(1+m+n);
+    tree.orig_type = new Int8Array(1+m+n);
+    tree.orig_lb = new Float64Array(1+m+n);
+    tree.orig_ub = new Float64Array(1+m+n);
+    tree.orig_stat = new Int8Array(1+m+n);
+    tree.orig_prim = new Float64Array(1+m+n);
+    tree.orig_dual = new Float64Array(1+m+n);
     for (i = 1; i <= m; i++)
     {  var row = mip.row[i];
         tree.orig_type[i] = row.type;
@@ -6848,7 +6848,7 @@ function ios_create_tree(mip, parm){
     tree.curr = null;
     tree.mip = mip;
     /*tree.solved = 0;*/
-    tree.non_int = new Array(1+n);
+    tree.non_int = new Int8Array(1+n);
     xfillArr(tree.non_int, 1, 0, n);
     /* arrays to save parent subproblem components will be allocated
      later */
@@ -6868,8 +6868,8 @@ function ios_create_tree(mip, parm){
     /*tree.round = 0;*/
     /* pseudocost branching */
     tree.pcost = null;
-    tree.iwrk = new Array(1+n);
-    tree.dwrk = new Array(1+n);
+    tree.iwrk = new Int32Array(1+n);
+    tree.dwrk = new Float64Array(1+n);
     /* initialize control parameters */
     tree.parm = parm;
     tree.tm_beg = xtime();
@@ -6937,10 +6937,10 @@ function ios_revive_node(tree, p){
             if (tree.pred_max < m + n)
             {  var new_size = m + n + 100;
                 tree.pred_max = new_size;
-                tree.pred_type = new Array(1+new_size);
-                tree.pred_lb = new Array(1+new_size);
-                tree.pred_ub = new Array(1+new_size);
-                tree.pred_stat = new Array(1+new_size);
+                tree.pred_type = new Int8Array(1+new_size);
+                tree.pred_lb = new Float64Array(1+new_size);
+                tree.pred_ub = new Float64Array(1+new_size);
+                tree.pred_stat = new Int8Array(1+new_size);
             }
             /* save row attributes */
             for (i = 1; i <= m; i++)
@@ -6980,8 +6980,8 @@ function ios_revive_node(tree, p){
         {
             var len, ind;
             var val;
-            ind = new Array(1+n);
-            val = new Array(1+n);
+            ind = new Int32Array(1+n);
+            val = new Float64Array(1+n);
             for (r = node.r_ptr; r != null; r = r.next)
             {  i = glp_add_rows(mip, 1);
                 glp_set_row_name(mip, i, r.name);
@@ -7044,10 +7044,10 @@ function ios_freeze_node(tree){
         xassert(tree.root_ub == null);
         xassert(tree.root_stat == null);
         tree.root_m = m;
-        tree.root_type = new Array(1+m+n);
-        tree.root_lb = new Array(1+m+n);
-        tree.root_ub = new Array(1+m+n);
-        tree.root_stat = new Array(1+m+n);
+        tree.root_type = new Int8Array(1+m+n);
+        tree.root_lb = new Float64Array(1+m+n);
+        tree.root_ub = new Float64Array(1+m+n);
+        tree.root_stat = new Int8Array(1+m+n);
         for (k = 1; k <= m+n; k++)
         {  if (k <= m)
         {   row = mip.row[k];
@@ -7122,8 +7122,8 @@ function ios_freeze_node(tree){
         if (pred_m < m)
         {  var len, ind;
             var val;
-            ind = new Array(1+n);
-            val = new Array(1+n);
+            ind = new Int32Array(1+n);
+            val = new Float64Array(1+n);
             for (i = m; i > pred_m; i--)
             {   row = mip.row[i];
                 var r = {};
@@ -7158,7 +7158,7 @@ function ios_freeze_node(tree){
         {
             var nrs = m - root_m;
             xassert(nrs > 0);
-            var num = new Array(1+nrs);
+            var num = new Int32Array(1+nrs);
             for (i = 1; i <= nrs; i++) num[i] = root_m + i;
             glp_del_rows(mip, nrs, num);
         }
@@ -7298,7 +7298,7 @@ function ios_delete_tree(tree){
     {  var nrs, num;
         nrs = m - tree.orig_m;
         xassert(nrs > 0);
-        num = new Array(1+nrs);
+        num = new Int32Array(1+nrs);
         for (i = 1; i <= nrs; i++) num[i] = tree.orig_m + i;
         glp_del_rows(mip, nrs, num);
     }
@@ -7557,7 +7557,7 @@ function ios_best_node(tree){
     return best == null ? 0 : best.p;
 }
 
-function ios_relative_gap(tree){
+var ios_relative_gap = exports['glp_ios_relative_gap'] = function(tree){
     var mip = tree.mip;
     var p;
     var best_mip, best_bnd, gap;
@@ -7579,7 +7579,7 @@ function ios_relative_gap(tree){
         gap = DBL_MAX;
     }
     return gap;
-}
+};
 
 function ios_solve_node(tree){
     var mip = tree.mip;
@@ -8083,15 +8083,15 @@ function ios_preprocess_node(tree, max_pass){
         xassert(0 <= nrs && nrs <= m+1);
         xassert(max_pass > 0);
         /* allocate working arrays */
-        ind = new Array(1+n);
-        list = new Array(1+m+1);
-        mark = new Array(1+m+1);
+        ind = new Int32Array(1+n);
+        list = new Int32Array(1+m+1);
+        mark = new Int32Array(1+m+1);
         xfillArr(mark, 0, 0, m+1);
-        pass = new Array(1+m+1);
+        pass = new Int32Array(1+m+1);
         xfillArr(pass, 0, 0, m+1);
-        val = new Array(1+n);
-        lb = new Array(1+n);
-        ub = new Array(1+n);
+        val = new Float64Array(1+n);
+        lb = new Float64Array(1+n);
+        ub = new Float64Array(1+n);
         /* initialize the list of rows to be processed */
         size = 0;
         for (k = 1; k <= nrs; k++)
@@ -8190,8 +8190,8 @@ function ios_preprocess_node(tree, max_pass){
     /* the current subproblem must exist */
     xassert(tree.curr != null);
     /* determine original row bounds */
-    L = new Array(1+m);
-    U = new Array(1+m);
+    L = new Float64Array(1+m);
+    U = new Float64Array(1+m);
     switch (mip.mip_stat)
     {  case GLP_UNDEF:
         L[0] = -DBL_MAX; U[0] = +DBL_MAX;
@@ -8216,15 +8216,15 @@ function ios_preprocess_node(tree, max_pass){
         U[i] = glp_get_row_ub(mip, i);
     }
     /* determine original column bounds */
-    l = new Array(1+n);
-    u = new Array(1+n);
+    l = new Float64Array(1+n);
+    u = new Float64Array(1+n);
     for (j = 1; j <= n; j++)
     {  l[j] = glp_get_col_lb(mip, j);
         u[j] = glp_get_col_ub(mip, j);
     }
     /* build the initial list of rows to be analyzed */
     nrs = m + 1;
-    num = new Array(1+nrs);
+    num = new Int32Array(1+nrs);
     for (i = 1; i <= nrs; i++) num[i] = i - 1;
     /* perform basic preprocessing */
     if (basic_preprocessing(mip , L, U, l, u, nrs, num, max_pass))
@@ -8650,7 +8650,7 @@ function ios_driver(T){
             T.mip.row[i].level == T.curr.level &&
             T.mip.row[i].stat == GLP_BS)
         {  if (num == null)
-            num = new Array(1+T.mip.m);
+            num = new Int32Array(1+T.mip.m);
             num[++cnt] = i;
         }
         }
@@ -9220,10 +9220,10 @@ function ios_create_vec(n){
     v = {};
     v.n = n;
     v.nnz = 0;
-    v.pos = new Array(1+n);
+    v.pos = new Int32Array(1+n);
     xfillArr(v.pos, 1, 0, n);
-    v.ind = new Array(1+n);
-    v.val = new Array(1+n);
+    v.ind = new Int32Array(1+n);
+    v.val = new Float64Array(1+n);
     return v;
 }
 
@@ -9505,9 +9505,9 @@ function ios_gmi_gen(tree){
     var worka = {};
     /* allocate working arrays */
     var_ = new Array(1+n);
-    worka.ind = new Array(1+n);
-    worka.val = new Array(1+n);
-    worka.phi = new Array(1+m+n);
+    worka.ind = new Int32Array(1+n);
+    worka.val = new Float64Array(1+n);
+    worka.phi = new Float64Array(1+m+n);
     /* build the list of integer structural variables, which are
      basic and have fractional value in optimal solution to current
      LP relaxation */
@@ -9722,16 +9722,16 @@ function ios_mir_init(tree){
     mir = {};
     mir.m = m;
     mir.n = n;
-    mir.skip = new Array(1+m);
-    mir.isint = new Array(1+m+n);
-    mir.lb = new Array(1+m+n);
-    mir.vlb = new Array(1+m+n);
-    mir.ub = new Array(1+m+n);
-    mir.vub = new Array(1+m+n);
-    mir.x = new Array(1+m+n);
-    mir.agg_row = new Array(1+MAXAGGR);
+    mir.skip = new Int8Array(1+m);
+    mir.isint = new Int8Array(1+m+n);
+    mir.lb = new Float64Array(1+m+n);
+    mir.vlb = new Int32Array(1+m+n);
+    mir.ub = new Float64Array(1+m+n);
+    mir.vub = new Int32Array(1+m+n);
+    mir.x = new Float64Array(1+m+n);
+    mir.agg_row = new Int32Array(1+MAXAGGR);
     mir.agg_vec = ios_create_vec(m+n);
-    mir.subst = new Array(1+m+n);
+    mir.subst = new Int8Array(1+m+n);
     mir.mod_vec = ios_create_vec(m+n);
     mir.cut_vec = ios_create_vec(m+n);
     /* set global row attributes */
@@ -9806,7 +9806,7 @@ function ios_mir_gen(tree, mir){
         var vset;
 
         /* allocate working arrays */
-        cset = new Array(1+n);
+        cset = new Int8Array(1+n);
         vset = new Array(1+n);
         /* choose initial C */
         for (j = 1; j <= n; j++)
@@ -10240,9 +10240,9 @@ function ios_mir_gen(tree, mir){
         /* if there is no integer variable, nothing to generate */
         if (nint == 0) return r_best;
         /* allocate working arrays */
-        u = new Array(1+nint);
-        x = new Array(1+nint);
-        alpha = new Array(1+nint);
+        u = new Float64Array(1+nint);
+        x = new Float64Array(1+nint);
+        alpha = new Float64Array(1+nint);
         /* determine u and x */
         for (j = 1; j <= nint; j++)
         {  k = mir.cut_vec.ind[j];
@@ -10494,8 +10494,8 @@ function ios_mir_gen(tree, mir){
         var m = mir.m;
         var n = mir.n;
         var j, k, len;
-        var ind = new Array(1+n);
-        var val = new Array(1+n);
+        var ind = new Int32Array(1+n);
+        var val = new Float64Array(1+n);
         len = 0;
         for (j = mir.cut_vec.nnz; j >= 1; j--)
         {  k = mir.cut_vec.ind[j];
@@ -10987,9 +10987,9 @@ function ios_cov_gen(tree){
     var r, val, work;
     xassert(lpx_get_status(prob) == LPX_OPT);
     /* allocate working arrays */
-    ind = new Array(1+n);
-    val = new Array(1+n);
-    work = new Array(1+n);
+    ind = new Int32Array(1+n);
+    val = new Float64Array(1+n);
+    work = new Float64Array(1+n);
     /* look through all rows */
     for (i = 1; i <= m; i++)
         for (kase = 1; kase <= 2; kase++)
@@ -11251,11 +11251,11 @@ function lpx_create_cog(lp){
     /* determine which binary variables should be included in the
      conflict graph */
     nb = 0;
-    vert = new Array(1+n);
+    vert = new Int32Array(1+n);
     for (j = 1; j <= n; j++) vert[j] = 0;
-    orig = new Array(1+n);
-    ind = new Array(1+n);
-    val = new Array(1+n);
+    orig = new Int32Array(1+n);
+    ind = new Int32Array(1+n);
+    val = new Float64Array(1+n);
     for (i = 1; i <= m; i++)
     {  L = get_row_lb(lp, i);
         U = get_row_ub(lp, i);
@@ -11398,7 +11398,7 @@ function lpx_clique_cut(lp, cog, ind, val){
 
     function sub(dsa, ct, table, level, weight, l_weight){
         var i, j, k, curr_weight, left_weight, p1, p2, newtable;
-        newtable = new Array(dsa.n);
+        newtable = new Int32Array(dsa.n);
         if (ct <= 0)
         {  /* 0 or 1 elements left; include these */
             if (ct == 0)
@@ -11447,11 +11447,11 @@ function lpx_clique_cut(lp, cog, ind, val){
         dsa.record = 0;
         dsa.rec_level = 0;
         dsa.rec = sol;
-        dsa.clique = new Array(dsa.n);
-        dsa.set = new Array(dsa.n);
-        used = new Array(dsa.n);
-        nwt = new Array(dsa.n);
-        pos = new Array(dsa.n);
+        dsa.clique = new Int32Array(dsa.n);
+        dsa.set = new Int32Array(dsa.n);
+        used = new Int32Array(dsa.n);
+        nwt = new Int32Array(dsa.n);
+        pos = new Int32Array(dsa.n);
         /* start timer */
         timer = xtime();
         /* order vertices */
@@ -11500,9 +11500,9 @@ function lpx_clique_cut(lp, cog, ind, val){
     var j, t, v, card, temp, len = 0, w, sol;
     var x, sum, b, vec;
     /* allocate working arrays */
-    w = new Array(1 + 2 * cog.nb);
-    sol = new Array(1 + 2 * cog.nb);
-    vec = new Array(1+n);
+    w = new Int32Array(1 + 2 * cog.nb);
+    sol = new Int32Array(1 + 2 * cog.nb);
+    vec = new Float64Array(1+n);
     /* assign weights to vertices of the conflict graph */
     for (t = 1; t <= cog.nb; t++)
     {  j = cog.orig[t];
@@ -11580,8 +11580,8 @@ function ios_clq_gen(tree, gen){
     var len, ind;
     var val;
     xassert(gen != null);
-    ind = new Array(1+n);
-    val = new Array(1+n);
+    ind = new Int32Array(1+n);
+    val = new Float64Array(1+n);
     len = lpx_clique_cut(tree.mip, gen, ind, val);
     if (len > 0)
     {  /* xprintf("len = %d", len); */
@@ -11683,8 +11683,8 @@ function branch_drtom(T, callback){
     /* basic solution of LP relaxation must be optimal */
     xassert(glp_get_status(mip) == GLP_OPT);
     /* allocate working arrays */
-    ind = new Array(1+n);
-    val = new Array(1+n);
+    ind = new Int32Array(1+n);
+    val = new Float64Array(1+n);
     /* nothing has been chosen so far */
     jj = 0; degrad = -1.0;
     /* walk through the list of columns (structural variables) */
@@ -11864,10 +11864,10 @@ function ios_pcost_init(tree){
     /* initialize working data used on pseudocost branching */
     var n = tree.n, j;
     var csa = {};
-    csa.dn_cnt = new Array(1+n);
-    csa.dn_sum = new Array(1+n);
-    csa.up_cnt = new Array(1+n);
-    csa.up_sum = new Array(1+n);
+    csa.dn_cnt = new Int32Array(1+n);
+    csa.dn_sum = new Float64Array(1+n);
+    csa.up_cnt = new Int32Array(1+n);
+    csa.up_sum = new Float64Array(1+n);
     for (j = 1; j <= n; j++)
     {  csa.dn_cnt[j] = csa.up_cnt[j] = 0;
         csa.dn_sum[j] = csa.up_sum[j] = 0.0;
@@ -12183,8 +12183,8 @@ function ios_feas_pump(T){
                     var val, bnd;
                     /* add a row and make it identical to the objective row */
                     glp_add_rows(lp, 1);
-                    ind = new Array(1+n);
-                    val = new Array(1+n);
+                    ind = new Int32Array(1+n);
+                    val = new Float64Array(1+n);
                     for (j = 1; j <= n; j++)
                     {  ind[j] = j;
                         val[j] = P.col[j].coef;
@@ -12334,7 +12334,7 @@ function ios_feas_pump(T){
                 }
                 if (k > nv)
                 {  /* okay; the basic solution seems to be integer feasible */
-                    var x = new Array(1+n);
+                    var x = new Float64Array(1+n);
                     for (j = 1; j <= n; j++)
                     {  x[j] = lp.col[j].prim;
                         if (P.col[j].kind == GLP_IV) x[j] = Math.floor(x[j] + 0.5);
@@ -12435,9 +12435,9 @@ function ios_process_cuts(T){
     xassert(pool.size > 0);
     /* allocate working arrays */
     info = new Array(1+pool.size);
-    ind = new Array(1+T.n);
-    val = new Array(1+T.n);
-    work = new Array(1+T.n);
+    ind = new Int32Array(1+T.n);
+    val = new Float64Array(1+T.n);
+    work = new Float64Array(1+T.n);
     for (k = 1; k <= T.n; k++) work[k] = 0.0;
     /* build the list of cuts stored in the cut pool */
     for (k = 0, cut = pool.head; cut != null; cut = cut.next){
@@ -13096,28 +13096,28 @@ function lpf_factorize(lpf, m, bh, col, info){
     lpf.valid = 0;
     /* allocate/reallocate arrays, if necessary */
     if (lpf.R_ptr == null)
-        lpf.R_ptr = new Array(1+lpf.n_max);
+        lpf.R_ptr = new Int32Array(1+lpf.n_max);
     if (lpf.R_len == null)
-        lpf.R_len = new Array(1+lpf.n_max);
+        lpf.R_len = new Int32Array(1+lpf.n_max);
     if (lpf.S_ptr == null)
-        lpf.S_ptr = new Array(1+lpf.n_max);
+        lpf.S_ptr = new Int32Array(1+lpf.n_max);
     if (lpf.S_len == null)
-        lpf.S_len = new Array(1+lpf.n_max);
+        lpf.S_len = new Int32Array(1+lpf.n_max);
     if (lpf.scf == null)
         lpf.scf = scf_create_it(lpf.n_max);
     if (lpf.v_ind == null)
-        lpf.v_ind = new Array(1+lpf.v_size);
+        lpf.v_ind = new Int32Array(1+lpf.v_size);
     if (lpf.v_val == null)
-        lpf.v_val = new Array(1+lpf.v_size);
+        lpf.v_val = new Float64Array(1+lpf.v_size);
     if (lpf.m0_max < m)
     {
         lpf.m0_max = m + 100;
-        lpf.P_row = new Array(1+lpf.m0_max+lpf.n_max);
-        lpf.P_col = new Array(1+lpf.m0_max+lpf.n_max);
-        lpf.Q_row = new Array(1+lpf.m0_max+lpf.n_max);
-        lpf.Q_col = new Array(1+lpf.m0_max+lpf.n_max);
-        lpf.work1 = new Array(1+lpf.m0_max+lpf.n_max);
-        lpf.work2 = new Array(1+lpf.m0_max+lpf.n_max);
+        lpf.P_row = new Int32Array(1+lpf.m0_max+lpf.n_max);
+        lpf.P_col = new Int32Array(1+lpf.m0_max+lpf.n_max);
+        lpf.Q_row = new Int32Array(1+lpf.m0_max+lpf.n_max);
+        lpf.Q_col = new Int32Array(1+lpf.m0_max+lpf.n_max);
+        lpf.work1 = new Float64Array(1+lpf.m0_max+lpf.n_max);
+        lpf.work2 = new Float64Array(1+lpf.m0_max+lpf.n_max);
     }
     /* try to factorize the basis matrix */
     switch (luf_factorize(lpf.luf, m, col, info))
@@ -13137,9 +13137,9 @@ function lpf_factorize(lpf, m, bh, col, info){
     if (_GLPLPF_DEBUG){
         /* store the basis matrix for debugging */
         xassert(m <= 32767);
-        lpf.B = B = new Array(1+m*m);
-        ind = new Array(1+m);
-        val = new Array(1+m);
+        lpf.B = B = new Float64Array(1+m*m);
+        ind = new Int32Array(1+m);
+        val = new Float64Array(1+m);
         for (k = 1; k <= m * m; k++)
             B[k] = 0.0;
         for (j = 1; j <= m; j++)
@@ -13295,7 +13295,7 @@ function lpf_ftran(lpf, x){
     xassert(0 <= m && m <= m0 + n);
     if (_GLPLPF_DEBUG){
         /* save the right-hand side vector */
-        b = new Array(1+m);
+        b = new Float64Array(1+m);
         for (i = 1; i <= m; i++) b[i] = x[i];
     }
     /* (f g) := inv(P) * (b 0) */
@@ -13335,7 +13335,7 @@ function lpf_btran(lpf, x){
     xassert(0 <= m && m <= m0 + n);
     if (_GLPLPF_DEBUG){
         /* save the right-hand side vector */
-        b = new Array(1+m);
+        b = new Float64Array(1+m);
         for (i = 1; i <= m; i++) b[i] = x[i];
     }
     /* (f g) := Q * (b 0) */
@@ -13368,8 +13368,8 @@ function enlarge_sva(lpf, new_size){
     xassert(v_size < new_size);
     while (v_size < new_size) v_size += v_size;
     lpf.v_size = v_size;
-    lpf.v_ind = new Array(1+v_size);
-    lpf.v_val = new Array(1+v_size);
+    lpf.v_ind = new Int32Array(1+v_size);
+    lpf.v_val = new Float64Array(1+v_size);
     xassert(used >= 0);
     xcopyArr(lpf.v_ind, 1, v_ind, 1, used);
     xcopyArr(lpf.v_val, 1, v_val, 1, used);
@@ -14953,32 +14953,32 @@ function reallocate(luf, n){
     luf.n = n;
     if (n <= n_max) return;
     luf.n_max = n_max = n + 100;
-    luf.fr_ptr = new Array(1+n_max);
-    luf.fr_len = new Array(1+n_max);
-    luf.fc_ptr = new Array(1+n_max);
-    luf.fc_len = new Array(1+n_max);
-    luf.vr_ptr = new Array(1+n_max);
-    luf.vr_len = new Array(1+n_max);
-    luf.vr_cap = new Array(1+n_max);
-    luf.vr_piv = new Array(1+n_max);
-    luf.vc_ptr = new Array(1+n_max);
-    luf.vc_len = new Array(1+n_max);
-    luf.vc_cap = new Array(1+n_max);
-    luf.pp_row = new Array(1+n_max);
-    luf.pp_col = new Array(1+n_max);
-    luf.qq_row = new Array(1+n_max);
-    luf.qq_col = new Array(1+n_max);
-    luf.sv_prev = new Array(1+n_max+n_max);
-    luf.sv_next = new Array(1+n_max+n_max);
-    luf.vr_max = new Array(1+n_max);
-    luf.rs_head = new Array(1+n_max);
-    luf.rs_prev = new Array(1+n_max);
-    luf.rs_next = new Array(1+n_max);
-    luf.cs_head = new Array(1+n_max);
-    luf.cs_prev = new Array(1+n_max);
-    luf.cs_next = new Array(1+n_max);
-    luf.flag = new Array(1+n_max);
-    luf.work = new Array(1+n_max);
+    luf.fr_ptr = new Int32Array(1+n_max);
+    luf.fr_len = new Int32Array(1+n_max);
+    luf.fc_ptr = new Int32Array(1+n_max);
+    luf.fc_len = new Int32Array(1+n_max);
+    luf.vr_ptr = new Int32Array(1+n_max);
+    luf.vr_len = new Int32Array(1+n_max);
+    luf.vr_cap = new Int32Array(1+n_max);
+    luf.vr_piv = new Float64Array(1+n_max);
+    luf.vc_ptr = new Int32Array(1+n_max);
+    luf.vc_len = new Int32Array(1+n_max);
+    luf.vc_cap = new Int32Array(1+n_max);
+    luf.pp_row = new Int32Array(1+n_max);
+    luf.pp_col = new Int32Array(1+n_max);
+    luf.qq_row = new Int32Array(1+n_max);
+    luf.qq_col = new Int32Array(1+n_max);
+    luf.sv_prev = new Int32Array(1+n_max+n_max);
+    luf.sv_next = new Int32Array(1+n_max+n_max);
+    luf.vr_max = new Float64Array(1+n_max);
+    luf.rs_head = new Int32Array(1+n_max);
+    luf.rs_prev = new Int32Array(1+n_max);
+    luf.rs_next = new Int32Array(1+n_max);
+    luf.cs_head = new Int32Array(1+n_max);
+    luf.cs_prev = new Int32Array(1+n_max);
+    luf.cs_next = new Int32Array(1+n_max);
+    luf.flag = new Int32Array(1+n_max);
+    luf.work = new Float64Array(1+n_max);
 }
 
 function initialize(luf, col, info){
@@ -15860,8 +15860,8 @@ function luf_factorize(luf, n, col, info){
         /* reallocate the sparse vector area, if required */
         if (luf.new_sva > 0)
         {   luf.sv_size = luf.new_sva;
-            luf.sv_ind = new Array(1+luf.sv_size);
-            luf.sv_val = new Array(1+luf.sv_size);
+            luf.sv_ind = new Int32Array(1+luf.sv_size);
+            luf.sv_val = new Float64Array(1+luf.sv_size);
             luf.new_sva = 0;
         }
         /* initialize LU-factorization data structures */
@@ -24240,8 +24240,8 @@ function mpl_internal_execute_table(mpl, tab){
             for (in_ = tab.u.in_.list; in_ != null; in_ = in_.next)
                 dca.nf++;
             dca.name = new Array(1+dca.nf);
-            dca.type = new Array(1+dca.nf);
-            dca.num = new Array(1+dca.nf);
+            dca.type = new Int32Array(1+dca.nf);
+            dca.num = new Float64Array(1+dca.nf);
             dca.str = new Array(1+dca.nf);
             k = 0;
             for (fld = tab.u.in_.fld; fld != null; fld = fld.next)
@@ -24343,8 +24343,8 @@ function mpl_internal_execute_table(mpl, tab){
             for (out = tab.u.out.list; out != null; out = out.next)
                 dca.nf++;
             dca.name = new Array(1+dca.nf);
-            dca.type = new Array(1+dca.nf);
-            dca.num = new Array(1+dca.nf);
+            dca.type = new Int32Array(1+dca.nf);
+            dca.num = new Float64Array(1+dca.nf);
             dca.str = new Array(1+dca.nf);
             k = 0;
             for (out = tab.u.out.list; out != null; out = out.next)
@@ -26434,8 +26434,8 @@ function npp_build_prob(npp, prob){
         glp_set_row_bnds(prob, i, type, row.lb, row.ub);
     }
     /* build columns and the constraint matrix */
-    ind = new Array(1+prob.m);
-    val = new Array(1+prob.m);
+    ind = new Int32Array(1+prob.m);
+    val = new Float64Array(1+prob.m);
     for (col = npp.c_head; col != null; col = col.next)
     {  j = glp_add_cols(prob, 1);
         glp_set_col_name(prob, j, col.name);
@@ -26464,8 +26464,8 @@ function npp_build_prob(npp, prob){
     npp.m = prob.m;
     npp.n = prob.n;
     npp.nnz = prob.nnz;
-    npp.row_ref = new Array(1+npp.m);
-    npp.col_ref = new Array(1+npp.n);
+    npp.row_ref = new Int32Array(1+npp.m);
+    npp.col_ref = new Int32Array(1+npp.n);
     for (row = npp.r_head, i = 0; row != null; row = row.next)
         npp.row_ref[++i] = row.i;
     for (col = npp.c_head, j = 0; col != null; col = col.next)
@@ -26508,21 +26508,21 @@ function npp_postprocess(npp, prob){
     /* allocate solution arrays */
     if (npp.sol == GLP_SOL)
     {  if (npp.r_stat == null)
-        npp.r_stat = new Array(1+npp.nrows);
+        npp.r_stat = new Int8Array(1+npp.nrows);
         for (i = 1; i <= npp.nrows; i++)
             npp.r_stat[i] = 0;
         if (npp.c_stat == null)
-            npp.c_stat = new Array(1+npp.ncols);
+            npp.c_stat = new Int8Array(1+npp.ncols);
         for (j = 1; j <= npp.ncols; j++)
             npp.c_stat[j] = 0;
     }
     if (npp.c_value == null)
-        npp.c_value = new Array(1+npp.ncols);
+        npp.c_value = new Float64Array(1+npp.ncols);
     for (j = 1; j <= npp.ncols; j++)
         npp.c_value[j] = DBL_MAX;
     if (npp.sol != GLP_MIP)
     {  if (npp.r_pi == null)
-        npp.r_pi = new Array(1+npp.nrows);
+        npp.r_pi = new Float64Array(1+npp.nrows);
         for (i = 1; i <= npp.nrows; i++)
             npp.r_pi[i] = DBL_MAX;
     }
@@ -29818,16 +29818,16 @@ function scf_create_it(n_max){
     var scf = {};
     scf.n_max = n_max;
     scf.n = 0;
-    scf.f = new Array(1 + n_max * n_max);
-    scf.u = new Array(1 + n_max * (n_max + 1) / 2);
-    scf.p = new Array(1 + n_max);
+    scf.f = new Float64Array(1 + n_max * n_max);
+    scf.u = new Float64Array(1 + n_max * (n_max + 1) / 2);
+    scf.p = new Int32Array(1 + n_max);
     scf.t_opt = SCF_TBG;
     scf.rank = 0;
     if (_GLPSCF_DEBUG)
-        scf.c = new Array(1 + n_max * n_max);
+        scf.c = new Float64Array(1 + n_max * n_max);
     else
         scf.c = null;
-    scf.w = new Array(1 + n_max);
+    scf.w = new Float64Array(1 + n_max);
     return scf;
 }
 
@@ -30383,32 +30383,32 @@ function spx_primal(lp, parm){
         xassert(m > 0 && n > 0);
         csa.m = m;
         csa.n = n;
-        csa.type = new Array(1+m+n);
-        csa.lb = new Array(1+m+n);
-        csa.ub = new Array(1+m+n);
-        csa.coef = new Array(1+m+n);
-        csa.obj = new Array(1+n);
-        csa.A_ptr = new Array(1+n+1);
-        csa.A_ind = new Array(1+nnz);
-        csa.A_val = new Array(1+nnz);
-        csa.head = new Array(1+m+n);
-        csa.stat = new Array(1+n);
-        csa.N_ptr = new Array(1+m+1);
-        csa.N_len = new Array(1+m);
+        csa.type = new Int8Array(1+m+n);
+        csa.lb = new Float64Array(1+m+n);
+        csa.ub = new Float64Array(1+m+n);
+        csa.coef = new Float64Array(1+m+n);
+        csa.obj = new Float64Array(1+n);
+        csa.A_ptr = new Int32Array(1+n+1);
+        csa.A_ind = new Int32Array(1+nnz);
+        csa.A_val = new Float64Array(1+nnz);
+        csa.head = new Int32Array(1+m+n);
+        csa.stat = new Int8Array(1+n);
+        csa.N_ptr = new Int32Array(1+m+1);
+        csa.N_len = new Int32Array(1+m);
         csa.N_ind = null; /* will be allocated later */
         csa.N_val = null; /* will be allocated later */
-        csa.bbar = new Array(1+m);
-        csa.cbar = new Array(1+n);
-        csa.refsp = new Array(1+m+n);
-        csa.gamma = new Array(1+n);
-        csa.tcol_ind = new Array(1+m);
-        csa.tcol_vec = new Array(1+m);
-        csa.trow_ind = new Array(1+n);
-        csa.trow_vec = new Array(1+n);
-        csa.work1 = new Array(1+m);
-        csa.work2 = new Array(1+m);
-        csa.work3 = new Array(1+m);
-        csa.work4 = new Array(1+m);
+        csa.bbar = new Float64Array(1+m);
+        csa.cbar = new Float64Array(1+n);
+        csa.refsp = new Int8Array(1+m+n);
+        csa.gamma = new Float64Array(1+n);
+        csa.tcol_ind = new Int32Array(1+m);
+        csa.tcol_vec = new Float64Array(1+m);
+        csa.trow_ind = new Int32Array(1+n);
+        csa.trow_vec = new Float64Array(1+n);
+        csa.work1 = new Float64Array(1+m);
+        csa.work2 = new Float64Array(1+m);
+        csa.work3 = new Float64Array(1+m);
+        csa.work4 = new Float64Array(1+m);
         return csa;
     }
 
@@ -30706,8 +30706,8 @@ function spx_primal(lp, parm){
             N_ptr[i+1] = N_ptr[i] + N_len[i];
         }
         /* now maximal number of non-zeros in matrix N is known */
-        csa.N_ind = new Array(N_ptr[m+1]);
-        csa.N_val = new Array(N_ptr[m+1]);
+        csa.N_ind = new Int32Array(N_ptr[m+1]);
+        csa.N_val = new Float64Array(N_ptr[m+1]);
     }
 
     function add_N_col(csa, j, k){
@@ -31632,7 +31632,7 @@ function spx_primal(lp, parm){
         var bbar = csa.bbar;
         var i;
         var e, emax, beta;
-        beta = new Array(1+m);
+        beta = new Float64Array(1+m);
         eval_beta(csa, beta);
         emax = 0.0;
         for (i = 1; i <= m; i++)
@@ -31649,7 +31649,7 @@ function spx_primal(lp, parm){
         var cbar = csa.cbar;
         var j;
         var e, emax, cost, pi;
-        pi = new Array(1+m);
+        pi = new Float64Array(1+m);
         eval_pi(csa, pi);
         emax = 0.0;
         for (j = 1; j <= n; j++)
@@ -32444,35 +32444,35 @@ function spx_dual(lp, parm){
         xassert(m > 0 && n > 0);
         csa.m = m;
         csa.n = n;
-        csa.type = new Array(1+m+n);
-        csa.lb = new Array(1+m+n);
-        csa.ub = new Array(1+m+n);
-        csa.coef = new Array(1+m+n);
-        csa.orig_type = new Array(1+m+n);
-        csa.orig_lb = new Array(1+m+n);
-        csa.orig_ub = new Array(1+m+n);
-        csa.obj = new Array(1+n);
-        csa.A_ptr = new Array(1+n+1);
-        csa.A_ind = new Array(1+nnz);
-        csa.A_val = new Array(1+nnz);
-        csa.AT_ptr = new Array(1+m+1);
-        csa.AT_ind = new Array(1+nnz);
-        csa.AT_val = new Array(1+nnz);
-        csa.head = new Array(1+m+n);
-        csa.bind = new Array(1+m+n);
-        csa.stat = new Array(1+n);
-        csa.bbar = new Array(1+m);
-        csa.cbar = new Array(1+n);
-        csa.refsp = new Array(1+m+n);
-        csa.gamma = new Array(1+m);
-        csa.trow_ind = new Array(1+n);
-        csa.trow_vec = new Array(1+n);
-        csa.tcol_ind = new Array(1+m);
-        csa.tcol_vec = new Array(1+m);
-        csa.work1 = new Array(1+m);
-        csa.work2 = new Array(1+m);
-        csa.work3 = new Array(1+m);
-        csa.work4 = new Array(1+m);
+        csa.type = new Int8Array(1+m+n);
+        csa.lb = new Float64Array(1+m+n);
+        csa.ub = new Float64Array(1+m+n);
+        csa.coef = new Float64Array(1+m+n);
+        csa.orig_type = new Int8Array(1+m+n);
+        csa.orig_lb = new Float64Array(1+m+n);
+        csa.orig_ub = new Float64Array(1+m+n);
+        csa.obj = new Float64Array(1+n);
+        csa.A_ptr = new Int32Array(1+n+1);
+        csa.A_ind = new Int32Array(1+nnz);
+        csa.A_val = new Float64Array(1+nnz);
+        csa.AT_ptr = new Int32Array(1+m+1);
+        csa.AT_ind = new Int32Array(1+nnz);
+        csa.AT_val = new Float64Array(1+nnz);
+        csa.head = new Int32Array(1+m+n);
+        csa.bind = new Int32Array(1+m+n);
+        csa.stat = new Int8Array(1+n);
+        csa.bbar = new Float64Array(1+m);
+        csa.cbar = new Float64Array(1+n);
+        csa.refsp = new Int8Array(1+m+n);
+        csa.gamma = new Float64Array(1+m);
+        csa.trow_ind = new Int32Array(1+n);
+        csa.trow_vec = new Float64Array(1+n);
+        csa.tcol_ind = new Int32Array(1+m);
+        csa.tcol_vec = new Float64Array(1+m);
+        csa.work1 = new Float64Array(1+m);
+        csa.work2 = new Float64Array(1+m);
+        csa.work3 = new Float64Array(1+m);
+        csa.work4 = new Float64Array(1+m);
         return csa;
     }
 
@@ -33609,7 +33609,7 @@ function spx_dual(lp, parm){
         var bbar = csa.bbar;
         var i;
         var e, emax;
-        var beta = new Array(1+m);
+        var beta = new Float64Array(1+m);
         eval_beta(csa, beta);
         emax = 0.0;
         for (i = 1; i <= m; i++)
@@ -33638,7 +33638,7 @@ function spx_dual(lp, parm){
         var cbar = csa.cbar;
         var j;
         var e, emax, cost;
-        var pi = new Array(1+m);
+        var pi = new Float64Array(1+m);
         eval_pi(csa, pi);
         emax = 0.0;
         for (j = 1; j <= n; j++)

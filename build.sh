@@ -1,4 +1,5 @@
 #!/bin/sh
+#you need http://closure-compiler.googlecode.com/files/compiler-latest.zip
 cat header glpdebug.js lib/*.js footer > dist/glpk.js
 cat glprelease.js lib/*.js > tmp1.js
 java -jar compiler.jar --compilation_level ADVANCED_OPTIMIZATIONS --js tmp1.js --js_output_file tmp2.js
