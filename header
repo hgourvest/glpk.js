@@ -1,4 +1,4 @@
-/*! glpk.js - v4.47.0
+/*! glpk.js - v4.48.0
 * https://github.com/hgourvest/glpk.js
-* Copyright (c) 2012 Henri Gourvest; Licensed GPLv2 */
+* Copyright (c) 2013 Henri Gourvest; Licensed GPLv2 */
 (function(exports) {

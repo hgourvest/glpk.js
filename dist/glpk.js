@@ -1,6 +1,6 @@
-/*! glpk.js - v4.47.0
+/*! glpk.js - v4.48.0
 * https://github.com/hgourvest/glpk.js
-* Copyright (c) 2012 Henri Gourvest; Licensed GPLv2 */
+* Copyright (c) 2013 Henri Gourvest; Licensed GPLv2 */
 (function(exports) {
 function xassert(test){
     if (!test){
@@ -12650,7 +12650,7 @@ function ios_choose_node(T){
 /* library version numbers: */
 var
     GLP_MAJOR_VERSION = exports["GLP_MAJOR_VERSION"] = 4,
-    GLP_MINOR_VERSION = exports["GLP_MINOR_VERSION"] = 47,
+    GLP_MINOR_VERSION = exports["GLP_MINOR_VERSION"] = 48,
 
 /* optimization direction flag: */
     /** @const */GLP_MIN = exports["GLP_MIN"] = 1, /* minimization */
@@ -24761,6 +24761,18 @@ function mpl_internal_printf_func(mpl, prt){
 }
 
 function mpl_internal_execute_printf(mpl, prt){
+    if (prt.fname == null)
+    {
+        mpl.prt_file = null;
+    }
+    else
+    {   /* evaluate file name string */
+        var sym = mpl_internal_eval_symbolic(mpl, prt.fname);
+        if (sym.str == null)
+            mpl.prt_file = sym.num;
+        else
+            mpl.prt_file = sym.str;
+    }
     mpl_internal_loop_within_domain(mpl, prt.domain, prt, mpl_internal_printf_func);
 }
 
@@ -25034,7 +25046,7 @@ function mpl_internal_open_output(mpl, name, callback){
     xassert(mpl.out_fp == null);
     if (callback == null)
     {
-        mpl.out_fp = xprintf;
+        mpl.out_fp = function(data){xprintf(data)};
     }
     else
     {   mpl.out_fp = callback;
@@ -25046,7 +25058,7 @@ function mpl_internal_open_output(mpl, name, callback){
 function mpl_internal_write_char(mpl, c){
     xassert(mpl.out_fp != null);
     if (c == '\n'){
-        mpl.out_fp(mpl.out_buffer);
+        mpl.out_fp(mpl.out_buffer, mpl.prt_file);
         mpl.out_buffer = '';
     } else
         mpl.out_buffer += c;
@@ -25054,13 +25066,13 @@ function mpl_internal_write_char(mpl, c){
 
 function mpl_internal_write_text(mpl, str){
     xassert(mpl.out_fp != null);
-    mpl.out_fp(str);
+    mpl.out_fp(str, mpl.prt_file);
 }
 
 function mpl_internal_flush_output(mpl){
     xassert(mpl.out_fp != null);
     if (mpl.out_buffer.length > 0){
-        mpl.out_fp(mpl.out_buffer);
+        mpl.out_fp(mpl.out_buffer, mpl.prt_file);
         mpl.out_buffer = '';
     }
 }
