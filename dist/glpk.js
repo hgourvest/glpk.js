@@ -1987,7 +1987,7 @@ var glp_get_unbnd_ray = exports["glp_get_unbnd_ray"] = function(lp){
     xassert(k >= 0);
     if (k > lp.m + lp.n) k = 0;
     return k;
-}
+};
 
 var glp_set_col_kind = exports["glp_set_col_kind"] = function(mip, j, kind){
     if (!(1 <= j && j <= mip.n))
@@ -16073,9 +16073,10 @@ var
     A_TUPLE        = 126,   /* n-tuple */
     A_VARIABLE     = 127;   /* model variable */
 
-var
+/* size limit is not necessary
+ var
     MAX_LENGTH = 100;
-/* maximal length of any symbolic value (this includes symbolic names,
+ maximal length of any symbolic value (this includes symbolic names,
  numeric and string literals, and all symbolic values that may appear
  during the evaluation phase) */
 
@@ -16298,8 +16299,12 @@ function mpl_internal_print_context(mpl){
 function mpl_internal_get_char(mpl){
     var c;
     if (mpl.c == MPL_EOF) return;
-    if (mpl.c == '\n') mpl.line++;
+    if (mpl.c == '\n'){
+        mpl.line++;
+        mpl.column = 0;
+    }
     c = mpl_internal_read_char(mpl);
+    mpl.column++;
     if (c == MPL_EOF)
     {  if (mpl.c == '\n')
         mpl.line--;
@@ -16319,8 +16324,9 @@ function mpl_internal_get_char(mpl){
 }
 
 function mpl_internal_append_char(mpl){
-    xassert(0 <= mpl.imlen && mpl.imlen <= MAX_LENGTH);
-    if (mpl.imlen == MAX_LENGTH)
+    xassert(0 <= mpl.imlen /*&& mpl.imlen <= MAX_LENGTH*/);
+/*
+    if (mpl.imlen >= MAX_LENGTH)
     {  switch (mpl.token)
     {  case T_NAME:
             mpl_internal_enter_context(mpl);
@@ -16334,6 +16340,7 @@ function mpl_internal_append_char(mpl){
             mpl_internal_enter_context(mpl);
             mpl_internal_error(mpl, "numeric literal " + mpl.image + "... too long");
             break;
+
         case T_STRING:
             mpl_internal_enter_context(mpl);
             mpl_internal_error(mpl, "string literal too long");
@@ -16342,6 +16349,7 @@ function mpl_internal_append_char(mpl){
             xassert(mpl != mpl);
     }
     }
+*/
     mpl.image += mpl.c ;
     mpl.imlen++;
     mpl_internal_get_char(mpl);
@@ -16486,18 +16494,56 @@ function mpl_internal_get_token(mpl){
         else if (mpl.c == '\'' || mpl.c == '"')
         {   /* character string */
             var quote = mpl.c;
+            var triple = false;
             mpl.token = T_STRING;
             mpl_internal_get_char(mpl);
-            for (;;)
-            {  if (mpl.c == '\n' || mpl.c == MPL_EOF)
-            {   mpl_internal_enter_context(mpl);
-                mpl_internal_error(mpl, "unexpected end of line; string literal incomplete");
-            }
-                if (mpl.c == quote)
-                {  mpl_internal_get_char(mpl);
-                    if (mpl.c != quote) break;
+
+
+            function eat(){
+                for (;;)
+                {   if ((mpl.c == '\n' && !triple) || mpl.c == MPL_EOF)
+                    {   mpl_internal_enter_context(mpl);
+                        mpl_internal_error(mpl, "unexpected end of line; string literal incomplete");
+                    }
+                    if (mpl.c == quote)
+                    {   mpl_internal_get_char(mpl);
+                        if (mpl.c == quote)
+                        {   if (triple)
+                            {   mpl_internal_get_char(mpl);
+                                if (mpl.c == quote)
+                                {
+                                    mpl_internal_get_char(mpl);
+                                    break;
+                                } else {
+                                    mpl.image += '""' ;
+                                    mpl.imlen += 2;
+                                }
+                            }
+                        } else {
+                            if (triple)
+                            {
+                                mpl.image += '"' ;
+                                mpl.imlen++;
+                            } else
+                                break;
+                        }
+
+                    }
+                    mpl_internal_append_char(mpl);
                 }
-                mpl_internal_append_char(mpl);
+            }
+
+            if (mpl.c == quote){
+                mpl_internal_get_char(mpl);
+                if (mpl.c == quote){
+                    triple = true;
+                    mpl_internal_get_char(mpl);
+                    eat();
+                } else {
+                    // empty string
+                }
+            } else {
+                eat()
             }
         }
         else if (!mpl.flag_d && mpl.c == '+'){
@@ -19674,13 +19720,13 @@ function mpl_internal_table_statement(mpl){
                     mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
                 else
                     mpl_internal_error(mpl, "field name missing where expected");
-                xassert(mpl.image.length < MAX_LENGTH+1);
+                //xassert(mpl.image.length < MAX_LENGTH+1);
                 name = mpl.image;
                 mpl_internal_get_token(mpl /* <symbolic name> */);
             }
             else
             {  /* field name is the same as the parameter name */
-                xassert(in_.par.name.length < MAX_LENGTH+1);
+                //xassert(in_.par.name.length < MAX_LENGTH+1);
                 name = in_.par.name;
             }
             /* assign field name */
@@ -19704,7 +19750,7 @@ function mpl_internal_table_statement(mpl){
                 if (mpl.token == T_COMMA || mpl.token == T_SEMICOLON)
                     mpl_internal_error(mpl, "expression missing where expected");
                 if (mpl.token == T_NAME)
-                {  xassert(mpl.image.length < MAX_LENGTH+1);
+                {  //xassert(mpl.image.length < MAX_LENGTH+1);
                     name = mpl.image;
                 }
                 else
@@ -19721,7 +19767,7 @@ function mpl_internal_table_statement(mpl){
                         mpl_internal_error(mpl, "invalid use of reserved keyword " + mpl.image);
                     else
                         mpl_internal_error(mpl, "field name missing where expected");
-                    xassert(mpl.image.length < MAX_LENGTH+1);
+                    //xassert(mpl.image.length < MAX_LENGTH+1);
                     name = mpl.image;
                     mpl_internal_get_token(mpl /* <symbolic name> */);
                 }
@@ -20019,6 +20065,7 @@ function mpl_internal_end_statement(mpl){
 function mpl_internal_simple_statement(mpl, spec){
     var stmt = {u: {}};
     stmt.line = mpl.line;
+    stmt.column = mpl.column;
     stmt.next = null;
     if (mpl_internal_is_keyword(mpl, "set"))
     {  if (spec)
@@ -21296,7 +21343,7 @@ function mpl_internal_concat_symbols
         sym2            /* destroyed */
         ){
     var str1, str2;
-    xassert(MAX_LENGTH >= DBL_DIG + DBL_DIG);
+    //xassert(MAX_LENGTH >= DBL_DIG + DBL_DIG);
 
     if (sym1.str == null)
         str1 = String(sym1.num);
@@ -21307,12 +21354,13 @@ function mpl_internal_concat_symbols
         str2 = String(sym2.num);
     else
         str2 = sym2.str;
-
+/*
     if (str1.length + str2.length > MAX_LENGTH)
     {   var buf = mpl_internal_format_symbol(mpl, sym1);
         xassert(buf.length < MAX_LENGTH);
         mpl_internal_error(mpl, buf + " & " + mpl_internal_format_symbol(mpl, sym2) + "; resultant symbol exceeds " + MAX_LENGTH + " characters");
     }
+*/
     return mpl_internal_create_symbol_str(mpl, str1 + str2);
 }
 
@@ -24108,7 +24156,7 @@ var mpl_tab_set_str = exports["mpl_tab_set_str"] = function(dca, k, str){
     /* assign string value to k-th field */
     xassert(1 <= k && k <= dca.nf);
     xassert(dca.type[k] == '?');
-    xassert(str.length <= MAX_LENGTH);
+    //xassert(str.length <= MAX_LENGTH);
     xassert(dca.str[k] != null);
     dca.type[k] = 'S';
     dca.str[k] = str;
@@ -24266,7 +24314,7 @@ function mpl_internal_execute_table(mpl, tab){
                             dca.num[k]));
                         break;
                         case 'S':
-                            xassert(dca.str[k].length <= MAX_LENGTH);
+                            //xassert(dca.str[k].length <= MAX_LENGTH);
                             tup = mpl_internal_expand_tuple(mpl, tup, mpl_internal_create_symbol_str(mpl, dca.str[k]));
                             break;
                         default:
@@ -24304,7 +24352,7 @@ function mpl_internal_execute_table(mpl, tab){
                                     dca.num[k]);
                                 break;
                                 case 'S':
-                                    xassert(dca.str[k].length <= MAX_LENGTH);
+                                    //xassert(dca.str[k].length <= MAX_LENGTH);
                                     memb.value.sym = mpl_internal_create_symbol_str(mpl, dca.str[k]);
                                     break;
                                 default:
@@ -25000,6 +25048,7 @@ function mpl_internal_postsolve_model(mpl){
 
 function mpl_internal_open_input(mpl, name, callback){
     mpl.line = 0;
+    mpl.column = 0;
     mpl.c = '\n';
     mpl.token = 0;
     mpl.imlen = 0;
@@ -25089,13 +25138,16 @@ function mpl_internal_error(mpl, msg){
             /* translation phase */
             error = new Error(mpl.in_file + ":" + mpl.line + ": " + msg);
             error["line"] = mpl.line;
+            error["column"] = mpl.column;
             mpl_internal_print_context(mpl);
             break;
         case 3:
             /* generation/postsolve phase */
             var line = (mpl.stmt == null ? 0 : mpl.stmt.line);
+            var column = (mpl.stmt == null ? 0 : mpl.stmt.column);
             error = new Error(line + ": " + msg);
             error["line"] = line;
+            error["column"] = column;
             break;
         default:
             xassert(mpl != mpl);
@@ -25124,6 +25176,7 @@ var mpl_initialize = exports["mpl_initialize"] = function(){
     var mpl = {};
     /* scanning segment */
     mpl.line = 0;
+    mpl.column = 0;
     mpl.c = 0;
     mpl.token = 0;
     mpl.imlen = 0;
@@ -25985,8 +26038,10 @@ function mpl_internal_fn_time2str(mpl, t, fmt){
         buf = fmt[f];
         //buf[1] = '\0';
     }
+/*
         if (len + buf.length > MAX_LENGTH)
             mpl_internal_error(mpl, "time2str; output string length exceeds " + MAX_LENGTH + " charaters");
+*/
         str += buf;
         len += buf.length;
     }
