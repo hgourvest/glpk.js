@@ -3,7 +3,7 @@
 GNU Linear Programming Kit for Javascript
 
 [Live demo][demo]
-[demo]: http://hgourvest.github.com/glpk.js/
+[demo]: http://mathp.org
 
 ## Getting Started
 ### On the server
