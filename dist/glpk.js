@@ -24478,13 +24478,13 @@ function mpl_internal_display_con(mpl, con, memb, suff){
 
 function mpl_internal_display_memb(mpl, code){
     /* display member specified by pseudo-code */
-    var memb = {};
+    var memb = {value:{}};
     var e;
     xassert(code.op == O_MEMNUM || code.op == O_MEMSYM
         || code.op == O_MEMSET || code.op == O_MEMVAR
         || code.op == O_MEMCON);
     memb.tuple = null;
-    for (e = code.arg.par.list; e != null; e = e.next)
+    for (e = code.arg.par.list || code.arg.var_.list; e != null; e = e.next)
         memb.tuple = mpl_internal_expand_tuple(mpl, memb.tuple, mpl_internal_eval_symbolic(mpl,
             e.x));
     switch (code.op)
