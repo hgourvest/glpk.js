@@ -3,7 +3,7 @@
 GNU Linear Programming Kit for Javascript
 
 [Live demo][demo]
-[demo]: http://mathp.org
+[demo]: http://mathp.org/edit
 
 ## Getting Started
 
