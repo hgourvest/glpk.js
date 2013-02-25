@@ -6,12 +6,6 @@ GNU Linear Programming Kit for Javascript
 [demo]: http://mathp.org
 
 ## Getting Started
-### On the server
-Install the module with: `npm install glpk.js`
-
-```javascript
-var glpk = require('glpk.js');
-```
 
 ### In the browser
 Download the [production version][min] or the [development version][max].
