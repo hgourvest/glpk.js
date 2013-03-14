@@ -24112,6 +24112,10 @@ var mpl_tab_get_arg = exports["mpl_tab_get_arg"] = function(dca, k){
     return dca.arg[k];
 };
 
+var mpl_tab_get_args = exports["mpl_tab_get_args"] = function(dca, k){
+    return dca.arg;
+};
+
 var mpl_tab_num_flds = exports["mpl_tab_num_flds"] = function (dca){
     /* returns the number of fields */
     return dca.nf;
@@ -26068,7 +26072,7 @@ function mpl_tab_drv_open(mpl, mode){
     xassert(dca.link == null);
     xassert(dca.na >= 1);
 
-    var Driver = MPL_DRIVERS[dca.arg[1]];
+    var Driver = MPL_DRIVERS[dca.arg[1].toLowerCase()];
     if (Driver)
         dca.link = new Driver(dca, mode, mpl.tablecb);
     else
@@ -26098,7 +26102,7 @@ function mpl_tab_drv_flush(mpl){
 }
 
 var mpl_tab_drv_register = exports["mpl_tab_drv_register"] = function (name, driver){
-    MPL_DRIVERS[name] = driver;
+    MPL_DRIVERS[name.toLowerCase()] = driver;
 };
 
 /*****************************************
