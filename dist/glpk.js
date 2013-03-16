@@ -4753,7 +4753,7 @@ function rotate_subtree(tree, node)
             p.up = r; p.flag = 0; p.right = x;
             q.up = r; q.flag = 1; q.left = y;
             if (x != null){x.up = p; x.flag = 1}
-            if (y != null) y.up = q; y.flag = 0;
+            if (y != null){y.up = q; y.flag = 0}
             node = r;
         }
     }
