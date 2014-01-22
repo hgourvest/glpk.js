@@ -1,4 +1,4 @@
-/*! glpk.js - v4.48.0
+/*! glpk.js - v4.49.0
 * https://github.com/hgourvest/glpk.js
 * Copyright (c) 2013 Henri Gourvest; Licensed GPLv2 */
 (function(exports) {
@@ -2449,7 +2449,7 @@ var glp_mip_col_val = exports["glp_mip_col_val"] = function(mip, j){
     return mip.col[j].mipx;
 };
 
-function _glp_check_kkt(P, sol, cond, callback){
+function glp_check_kkt(P, sol, cond, callback){
     /* check feasibility and optimality conditions */
     var m = P.m;
     var n = P.n;
@@ -2665,7 +2665,7 @@ function _glp_check_kkt(P, sol, cond, callback){
             else
                 xassert(P != P);
             /* check for positivity */
-            if (row.type == GLP_FR || row.type == GLP_LO)
+            if (row.stat == GLP_NF || row.stat == GLP_NL)
             {  if (t < 0.0)
             {  e = - t;
                 if (ae_max < e){
@@ -2675,7 +2675,7 @@ function _glp_check_kkt(P, sol, cond, callback){
             }
             }
             /* check for negativity */
-            if (row.type == GLP_FR || row.type == GLP_UP)
+            if (row.stat == GLP_NF || row.stat == GLP_NU)
             {  if (t > 0.0)
             {  e = + t;
                 if (ae_max < e){
@@ -2703,7 +2703,7 @@ function _glp_check_kkt(P, sol, cond, callback){
             else
                 xassert(P != P);
             /* check for positivity */
-            if (col.type == GLP_FR || col.type == GLP_LO)
+            if (col.stat == GLP_NF || col.stat == GLP_NL)
             {  if (t < 0.0)
             {  e = - t;
                 if (ae_max < e){
@@ -2713,7 +2713,7 @@ function _glp_check_kkt(P, sol, cond, callback){
             }
             }
             /* check for negativity */
-            if (col.type == GLP_FR || col.type == GLP_UP)
+            if (col.stat == GLP_NF || col.stat == GLP_NU)
             {  if (t > 0.0)
             {  e = + t;
                 if (ae_max < e){
@@ -2979,7 +2979,7 @@ var glp_warm_up = exports["glp_warm_up"] = function(P){
     var row;
     var col;
     var aij;
-    var i, j, type, ret;
+    var i, j, type, stat, ret;
     var eps, temp, work;
     /* invalidate basic solution */
     P.pbs_stat = P.dbs_stat = GLP_UNDEF;
@@ -3104,10 +3104,10 @@ var glp_warm_up = exports["glp_warm_up"] = function(P){
         }
         /* N[j] is i-th column of matrix (I|-A) */
         row.dual = - work[i];
-        type = row.type;
+        stat = row.stat;
         temp = (P.dir == GLP_MIN ? + row.dual : - row.dual);
-        if ((type == GLP_FR || type == GLP_LO) && temp < -1e-5 ||
-            (type == GLP_FR || type == GLP_UP) && temp > +1e-5)
+        if ((stat == GLP_NF || stat == GLP_NL) && temp < -1e-5 ||
+            (stat == GLP_NF || stat == GLP_NU) && temp > +1e-5)
             P.dbs_stat = GLP_INFEAS;
     }
     for (j = 1; j <= P.n; j++)
@@ -3120,15 +3120,15 @@ var glp_warm_up = exports["glp_warm_up"] = function(P){
         col.dual = col.coef;
         for (aij = col.ptr; aij != null; aij = aij.c_next)
             col.dual += aij.val * work[aij.row.i];
-        type = col.type;
+        stat = col.stat;
         temp = (P.dir == GLP_MIN ? + col.dual : - col.dual);
-        if ((type == GLP_FR || type == GLP_LO) && temp < -1e-5 ||
-            (type == GLP_FR || type == GLP_UP) && temp > +1e-5)
+        if ((stat == GLP_NF || stat == GLP_NL) && temp < -1e-5 ||
+            (stat == GLP_NF || stat == GLP_NU) && temp > +1e-5)
             P.dbs_stat = GLP_INFEAS;
     }
     /* free working array */
     return 0;
-}
+};
 
 var glp_eval_tab_row = exports["glp_eval_tab_row"] = function(lp, k, ind, val){
     var m = lp.m;
@@ -4717,7 +4717,7 @@ function rotate_subtree(tree, node)
             p.up = r; p.flag = 1; p.left = y;
             q.up = r; q.flag = 0; q.right = x;
             if (x != null){x.up = q; x.flag = 1}
-            if (y != null){y.up = p; y.flag = 0};
+            if (y != null){y.up = p; y.flag = 0}
             node = r;
         }
     }
@@ -12964,7 +12964,7 @@ function ios_choose_node(T){
 /* library version numbers: */
 var
     GLP_MAJOR_VERSION = exports["GLP_MAJOR_VERSION"] = 4,
-    GLP_MINOR_VERSION = exports["GLP_MINOR_VERSION"] = 48,
+    GLP_MINOR_VERSION = exports["GLP_MINOR_VERSION"] = 49,
 
 /* optimization direction flag: */
     /** @const */GLP_MIN = exports["GLP_MIN"] = 1, /* minimization */
@@ -13117,122 +13117,7 @@ var
 /* assignment problem formulation: */
     /** @const */GLP_ASN_MIN = exports["GLP_ASN_MIN"] = 1, /* perfect matching (minimization) */
     /** @const */GLP_ASN_MAX = exports["GLP_ASN_MAX"] = 2, /* perfect matching (maximization) */
-    /** @const */GLP_ASN_MMP = exports["GLP_ASN_MMP"] = 3, /* maximum matching */
-
-/* problem class: */
-    /** @const */LPX_LP = exports["LPX_LP"] = 100, /* linear programming (LP) */
-    /** @const */LPX_MIP = exports["LPX_MIP"] = 101, /* mixed integer programming (MIP) */
-
-/* type of auxiliary/structural variable: */
-    /** @const */LPX_FR = exports["LPX_FR"] = 110, /* free variable */
-    /** @const */LPX_LO = exports["LPX_LO"] = 111, /* variable with lower bound */
-    /** @const */LPX_UP = exports["LPX_UP"] = 112, /* variable with upper bound */
-    /** @const */LPX_DB = exports["LPX_DB"] = 113, /* double-bounded variable */
-    /** @const */LPX_FX = exports["LPX_FX"] = 114, /* fixed variable */
-
-/* optimization direction flag: */
-    /** @const */LPX_MIN = exports["LPX_MIN"] = 120, /* minimization */
-    /** @const */LPX_MAX = exports["LPX_MAX"] = 121, /* maximization */
-
-/* status of primal basic solution: */
-    /** @const */LPX_P_UNDEF = exports["LPX_P_UNDEF"] = 132, /* primal solution is undefined */
-    /** @const */LPX_P_FEAS = exports["LPX_P_FEAS"] = 133, /* solution is primal feasible */
-    /** @const */LPX_P_INFEAS = exports["LPX_P_INFEAS"] = 134, /* solution is primal infeasible */
-    /** @const */LPX_P_NOFEAS = exports["LPX_P_NOFEAS"] = 135, /* no primal feasible solution exists */
-
-/* status of dual basic solution: */
-    /** @const */LPX_D_UNDEF = exports["LPX_D_UNDEF"] = 136, /* dual solution is undefined */
-    /** @const */LPX_D_FEAS = exports["LPX_D_FEAS"] = 137, /* solution is dual feasible */
-    /** @const */LPX_D_INFEAS = exports["LPX_D_INFEAS"] = 138, /* solution is dual infeasible */
-    /** @const */LPX_D_NOFEAS = exports["LPX_D_NOFEAS"] = 139, /* no dual feasible solution exists */
-
-/* status of auxiliary/structural variable: */
-    /** @const */LPX_BS = exports["LPX_BS"] = 140, /* basic variable */
-    /** @const */LPX_NL = exports["LPX_NL"] = 141, /* non-basic variable on lower bound */
-    /** @const */LPX_NU = exports["LPX_NU"] = 142, /* non-basic variable on upper bound */
-    /** @const */LPX_NF = exports["LPX_NF"] = 143, /* non-basic free variable */
-    /** @const */LPX_NS = exports["LPX_NS"] = 144, /* non-basic fixed variable */
-
-/* status of interior-point solution: */
-    /** @const */LPX_T_UNDEF = exports["LPX_T_UNDEF"] = 150, /* interior solution is undefined */
-    /** @const */LPX_T_OPT = exports["LPX_T_OPT"] = 151, /* interior solution is optimal */
-
-/* kind of structural variable: */
-    /** @const */LPX_CV = exports["LPX_CV"] = 160, /* continuous variable */
-    /** @const */LPX_IV = exports["LPX_IV"] = 161, /* integer variable */
-
-/* status of integer solution: */
-    /** @const */LPX_I_UNDEF = exports["LPX_I_UNDEF"] = 170, /* integer solution is undefined */
-    /** @const */LPX_I_OPT = exports["LPX_I_OPT"] = 171, /* integer solution is optimal */
-    /** @const */LPX_I_FEAS = exports["LPX_I_FEAS"] = 172, /* integer solution is feasible */
-    /** @const */LPX_I_NOFEAS = exports["LPX_I_NOFEAS"] = 173, /* no integer solution exists */
-
-/* status codes reported by the routine lpx_get_status: */
-    /** @const */LPX_OPT = exports["LPX_OPT"] = 180, /* optimal */
-    /** @const */LPX_FEAS = exports["LPX_FEAS"] = 181, /* feasible */
-    /** @const */LPX_INFEAS = exports["LPX_INFEAS"] = 182, /* infeasible */
-    /** @const */LPX_NOFEAS = exports["LPX_NOFEAS"] = 183, /* no feasible */
-    /** @const */LPX_UNBND = exports["LPX_UNBND"] = 184, /* unbounded */
-    /** @const */LPX_UNDEF = exports["LPX_UNDEF"] = 185, /* undefined */
-
-/* exit codes returned by solver routines: */
-    /** @const */LPX_E_OK = exports["LPX_E_OK"] = 200, /* success */
-    /** @const */LPX_E_EMPTY = exports["LPX_E_EMPTY"] = 201, /* empty problem */
-    /** @const */LPX_E_BADB = exports["LPX_E_BADB"] = 202, /* invalid initial basis */
-    /** @const */LPX_E_INFEAS = exports["LPX_E_INFEAS"] = 203, /* infeasible initial solution */
-    /** @const */LPX_E_FAULT = exports["LPX_E_FAULT"] = 204, /* unable to start the search */
-    /** @const */LPX_E_OBJLL = exports["LPX_E_OBJLL"] = 205, /* objective lower limit reached */
-    /** @const */LPX_E_OBJUL = exports["LPX_E_OBJUL"] = 206, /* objective upper limit reached */
-    /** @const */LPX_E_ITLIM = exports["LPX_E_ITLIM"] = 207, /* iterations limit exhausted */
-    /** @const */LPX_E_TMLIM = exports["LPX_E_TMLIM"] = 208, /* time limit exhausted */
-    /** @const */LPX_E_NOFEAS = exports["LPX_E_NOFEAS"] = 209, /* no feasible solution */
-    /** @const */LPX_E_INSTAB = exports["LPX_E_INSTAB"] = 210, /* numerical instability */
-    /** @const */LPX_E_SING = exports["LPX_E_SING"] = 211, /* problems with basis matrix */
-    /** @const */LPX_E_NOCONV = exports["LPX_E_NOCONV"] = 212, /* no convergence (interior) */
-    /** @const */LPX_E_NOPFS = exports["LPX_E_NOPFS"] = 213, /* no primal feas. sol. (LP presolver) */
-    /** @const */LPX_E_NODFS = exports["LPX_E_NODFS"] = 214, /* no dual feas. sol. (LP presolver) */
-    /** @const */LPX_E_MIPGAP = exports["LPX_E_MIPGAP"] = 215, /* relative mip gap tolerance reached */
-
-/* control parameter identifiers: */
-    /** @const */LPX_K_MSGLEV = exports["LPX_K_MSGLEV"] = 300, /* lp.msg_lev */
-    /** @const */LPX_K_SCALE = exports["LPX_K_SCALE"] = 301, /* lp.scale */
-    /** @const */LPX_K_DUAL = exports["LPX_K_DUAL"] = 302, /* lp.dual */
-    /** @const */LPX_K_PRICE = exports["LPX_K_PRICE"] = 303, /* lp.price */
-    /** @const */LPX_K_RELAX = exports["LPX_K_RELAX"] = 304, /* lp.relax */
-    /** @const */LPX_K_TOLBND = exports["LPX_K_TOLBND"] = 305, /* lp.tol_bnd */
-    /** @const */LPX_K_TOLDJ = exports["LPX_K_TOLDJ"] = 306, /* lp.tol_dj */
-    /** @const */LPX_K_TOLPIV = exports["LPX_K_TOLPIV"] = 307, /* lp.tol_piv */
-    /** @const */LPX_K_ROUND = exports["LPX_K_ROUND"] = 308, /* lp.round */
-    /** @const */LPX_K_OBJLL = exports["LPX_K_OBJLL"] = 309, /* lp.obj_ll */
-    /** @const */LPX_K_OBJUL = exports["LPX_K_OBJUL"] = 310, /* lp.obj_ul */
-    /** @const */LPX_K_ITLIM = exports["LPX_K_ITLIM"] = 311, /* lp.it_lim */
-    /** @const */LPX_K_ITCNT = exports["LPX_K_ITCNT"] = 312, /* lp.it_cnt */
-    /** @const */LPX_K_TMLIM = exports["LPX_K_TMLIM"] = 313, /* lp.tm_lim */
-    /** @const */LPX_K_OUTFRQ = exports["LPX_K_OUTFRQ"] = 314, /* lp.out_frq */
-    /** @const */LPX_K_OUTDLY = exports["LPX_K_OUTDLY"] = 315, /* lp.out_dly */
-    /** @const */LPX_K_BRANCH = exports["LPX_K_BRANCH"] = 316, /* lp.branch */
-    /** @const */LPX_K_BTRACK = exports["LPX_K_BTRACK"] = 317, /* lp.btrack */
-    /** @const */LPX_K_TOLINT = exports["LPX_K_TOLINT"] = 318, /* lp.tol_int */
-    /** @const */LPX_K_TOLOBJ = exports["LPX_K_TOLOBJ"] = 319, /* lp.tol_obj */
-    /** @const */LPX_K_MPSINFO = exports["LPX_K_MPSINFO"] = 320, /* lp.mps_info */
-    /** @const */LPX_K_MPSOBJ = exports["LPX_K_MPSOBJ"] = 321, /* lp.mps_obj */
-    /** @const */LPX_K_MPSORIG = exports["LPX_K_MPSORIG"] = 322, /* lp.mps_orig */
-    /** @const */LPX_K_MPSWIDE = exports["LPX_K_MPSWIDE"] = 323, /* lp.mps_wide */
-    /** @const */LPX_K_MPSFREE = exports["LPX_K_MPSFREE"] = 324, /* lp.mps_free */
-    /** @const */LPX_K_MPSSKIP = exports["LPX_K_MPSSKIP"] = 325, /* lp.mps_skip */
-    /** @const */LPX_K_LPTORIG = exports["LPX_K_LPTORIG"] = 326, /* lp.lpt_orig */
-    /** @const */LPX_K_PRESOL = exports["LPX_K_PRESOL"] = 327, /* lp.presol */
-    /** @const */LPX_K_BINARIZE = exports["LPX_K_BINARIZE"] = 328, /* lp.binarize */
-    /** @const */LPX_K_USECUTS = exports["LPX_K_USECUTS"] = 329, /* lp.use_cuts */
-    /** @const */LPX_K_BFTYPE = exports["LPX_K_BFTYPE"] = 330, /* lp.bfcp.type */
-    /** @const */LPX_K_MIPGAP = exports["LPX_K_MIPGAP"] = 331, /* lp.mip_gap */
-
-    /** @const */LPX_C_COVER = exports["LPX_C_COVER"] = 0x01, /* mixed cover cuts */
-    /** @const */LPX_C_CLIQUE = exports["LPX_C_CLIQUE"] = 0x02, /* clique cuts */
-    /** @const */LPX_C_GOMORY = exports["LPX_C_GOMORY"] = 0x04, /* Gomory's mixed integer cuts */
-    /** @const */LPX_C_MIR = exports["LPX_C_MIR"] = 0x08, /* mixed integer rounding cuts */
-    /** @const */LPX_C_ALL = exports["LPX_C_ALL"] = 0xFF;
-
+    /** @const */GLP_ASN_MMP = exports["GLP_ASN_MMP"] = 3; /* maximum matching */
 function gcd(x, y){
     var r;
     xassert(x > 0 && y > 0);
@@ -13795,6 +13680,120 @@ function lpf_update_it(lpf, j, bh, len, ind, idx, val){
     return ret;
 }
 
+var
+/* problem class: */
+/** @const */LPX_LP = exports["LPX_LP"] = 100, /* linear programming (LP) */
+/** @const */LPX_MIP = exports["LPX_MIP"] = 101, /* mixed integer programming (MIP) */
+
+    /* type of auxiliary/structural variable: */
+/** @const */LPX_FR = exports["LPX_FR"] = 110, /* free variable */
+/** @const */LPX_LO = exports["LPX_LO"] = 111, /* variable with lower bound */
+/** @const */LPX_UP = exports["LPX_UP"] = 112, /* variable with upper bound */
+/** @const */LPX_DB = exports["LPX_DB"] = 113, /* double-bounded variable */
+/** @const */LPX_FX = exports["LPX_FX"] = 114, /* fixed variable */
+
+    /* optimization direction flag: */
+/** @const */LPX_MIN = exports["LPX_MIN"] = 120, /* minimization */
+/** @const */LPX_MAX = exports["LPX_MAX"] = 121, /* maximization */
+
+    /* status of primal basic solution: */
+/** @const */LPX_P_UNDEF = exports["LPX_P_UNDEF"] = 132, /* primal solution is undefined */
+/** @const */LPX_P_FEAS = exports["LPX_P_FEAS"] = 133, /* solution is primal feasible */
+/** @const */LPX_P_INFEAS = exports["LPX_P_INFEAS"] = 134, /* solution is primal infeasible */
+/** @const */LPX_P_NOFEAS = exports["LPX_P_NOFEAS"] = 135, /* no primal feasible solution exists */
+
+    /* status of dual basic solution: */
+/** @const */LPX_D_UNDEF = exports["LPX_D_UNDEF"] = 136, /* dual solution is undefined */
+/** @const */LPX_D_FEAS = exports["LPX_D_FEAS"] = 137, /* solution is dual feasible */
+/** @const */LPX_D_INFEAS = exports["LPX_D_INFEAS"] = 138, /* solution is dual infeasible */
+/** @const */LPX_D_NOFEAS = exports["LPX_D_NOFEAS"] = 139, /* no dual feasible solution exists */
+
+    /* status of auxiliary/structural variable: */
+/** @const */LPX_BS = exports["LPX_BS"] = 140, /* basic variable */
+/** @const */LPX_NL = exports["LPX_NL"] = 141, /* non-basic variable on lower bound */
+/** @const */LPX_NU = exports["LPX_NU"] = 142, /* non-basic variable on upper bound */
+/** @const */LPX_NF = exports["LPX_NF"] = 143, /* non-basic free variable */
+/** @const */LPX_NS = exports["LPX_NS"] = 144, /* non-basic fixed variable */
+
+    /* status of interior-point solution: */
+/** @const */LPX_T_UNDEF = exports["LPX_T_UNDEF"] = 150, /* interior solution is undefined */
+/** @const */LPX_T_OPT = exports["LPX_T_OPT"] = 151, /* interior solution is optimal */
+
+    /* kind of structural variable: */
+/** @const */LPX_CV = exports["LPX_CV"] = 160, /* continuous variable */
+/** @const */LPX_IV = exports["LPX_IV"] = 161, /* integer variable */
+
+    /* status of integer solution: */
+/** @const */LPX_I_UNDEF = exports["LPX_I_UNDEF"] = 170, /* integer solution is undefined */
+/** @const */LPX_I_OPT = exports["LPX_I_OPT"] = 171, /* integer solution is optimal */
+/** @const */LPX_I_FEAS = exports["LPX_I_FEAS"] = 172, /* integer solution is feasible */
+/** @const */LPX_I_NOFEAS = exports["LPX_I_NOFEAS"] = 173, /* no integer solution exists */
+
+    /* status codes reported by the routine lpx_get_status: */
+/** @const */LPX_OPT = exports["LPX_OPT"] = 180, /* optimal */
+/** @const */LPX_FEAS = exports["LPX_FEAS"] = 181, /* feasible */
+/** @const */LPX_INFEAS = exports["LPX_INFEAS"] = 182, /* infeasible */
+/** @const */LPX_NOFEAS = exports["LPX_NOFEAS"] = 183, /* no feasible */
+/** @const */LPX_UNBND = exports["LPX_UNBND"] = 184, /* unbounded */
+/** @const */LPX_UNDEF = exports["LPX_UNDEF"] = 185, /* undefined */
+
+    /* exit codes returned by solver routines: */
+/** @const */LPX_E_OK = exports["LPX_E_OK"] = 200, /* success */
+/** @const */LPX_E_EMPTY = exports["LPX_E_EMPTY"] = 201, /* empty problem */
+/** @const */LPX_E_BADB = exports["LPX_E_BADB"] = 202, /* invalid initial basis */
+/** @const */LPX_E_INFEAS = exports["LPX_E_INFEAS"] = 203, /* infeasible initial solution */
+/** @const */LPX_E_FAULT = exports["LPX_E_FAULT"] = 204, /* unable to start the search */
+/** @const */LPX_E_OBJLL = exports["LPX_E_OBJLL"] = 205, /* objective lower limit reached */
+/** @const */LPX_E_OBJUL = exports["LPX_E_OBJUL"] = 206, /* objective upper limit reached */
+/** @const */LPX_E_ITLIM = exports["LPX_E_ITLIM"] = 207, /* iterations limit exhausted */
+/** @const */LPX_E_TMLIM = exports["LPX_E_TMLIM"] = 208, /* time limit exhausted */
+/** @const */LPX_E_NOFEAS = exports["LPX_E_NOFEAS"] = 209, /* no feasible solution */
+/** @const */LPX_E_INSTAB = exports["LPX_E_INSTAB"] = 210, /* numerical instability */
+/** @const */LPX_E_SING = exports["LPX_E_SING"] = 211, /* problems with basis matrix */
+/** @const */LPX_E_NOCONV = exports["LPX_E_NOCONV"] = 212, /* no convergence (interior) */
+/** @const */LPX_E_NOPFS = exports["LPX_E_NOPFS"] = 213, /* no primal feas. sol. (LP presolver) */
+/** @const */LPX_E_NODFS = exports["LPX_E_NODFS"] = 214, /* no dual feas. sol. (LP presolver) */
+/** @const */LPX_E_MIPGAP = exports["LPX_E_MIPGAP"] = 215, /* relative mip gap tolerance reached */
+
+    /* control parameter identifiers: */
+/** @const */LPX_K_MSGLEV = exports["LPX_K_MSGLEV"] = 300, /* lp.msg_lev */
+/** @const */LPX_K_SCALE = exports["LPX_K_SCALE"] = 301, /* lp.scale */
+/** @const */LPX_K_DUAL = exports["LPX_K_DUAL"] = 302, /* lp.dual */
+/** @const */LPX_K_PRICE = exports["LPX_K_PRICE"] = 303, /* lp.price */
+/** @const */LPX_K_RELAX = exports["LPX_K_RELAX"] = 304, /* lp.relax */
+/** @const */LPX_K_TOLBND = exports["LPX_K_TOLBND"] = 305, /* lp.tol_bnd */
+/** @const */LPX_K_TOLDJ = exports["LPX_K_TOLDJ"] = 306, /* lp.tol_dj */
+/** @const */LPX_K_TOLPIV = exports["LPX_K_TOLPIV"] = 307, /* lp.tol_piv */
+/** @const */LPX_K_ROUND = exports["LPX_K_ROUND"] = 308, /* lp.round */
+/** @const */LPX_K_OBJLL = exports["LPX_K_OBJLL"] = 309, /* lp.obj_ll */
+/** @const */LPX_K_OBJUL = exports["LPX_K_OBJUL"] = 310, /* lp.obj_ul */
+/** @const */LPX_K_ITLIM = exports["LPX_K_ITLIM"] = 311, /* lp.it_lim */
+/** @const */LPX_K_ITCNT = exports["LPX_K_ITCNT"] = 312, /* lp.it_cnt */
+/** @const */LPX_K_TMLIM = exports["LPX_K_TMLIM"] = 313, /* lp.tm_lim */
+/** @const */LPX_K_OUTFRQ = exports["LPX_K_OUTFRQ"] = 314, /* lp.out_frq */
+/** @const */LPX_K_OUTDLY = exports["LPX_K_OUTDLY"] = 315, /* lp.out_dly */
+/** @const */LPX_K_BRANCH = exports["LPX_K_BRANCH"] = 316, /* lp.branch */
+/** @const */LPX_K_BTRACK = exports["LPX_K_BTRACK"] = 317, /* lp.btrack */
+/** @const */LPX_K_TOLINT = exports["LPX_K_TOLINT"] = 318, /* lp.tol_int */
+/** @const */LPX_K_TOLOBJ = exports["LPX_K_TOLOBJ"] = 319, /* lp.tol_obj */
+/** @const */LPX_K_MPSINFO = exports["LPX_K_MPSINFO"] = 320, /* lp.mps_info */
+/** @const */LPX_K_MPSOBJ = exports["LPX_K_MPSOBJ"] = 321, /* lp.mps_obj */
+/** @const */LPX_K_MPSORIG = exports["LPX_K_MPSORIG"] = 322, /* lp.mps_orig */
+/** @const */LPX_K_MPSWIDE = exports["LPX_K_MPSWIDE"] = 323, /* lp.mps_wide */
+/** @const */LPX_K_MPSFREE = exports["LPX_K_MPSFREE"] = 324, /* lp.mps_free */
+/** @const */LPX_K_MPSSKIP = exports["LPX_K_MPSSKIP"] = 325, /* lp.mps_skip */
+/** @const */LPX_K_LPTORIG = exports["LPX_K_LPTORIG"] = 326, /* lp.lpt_orig */
+/** @const */LPX_K_PRESOL = exports["LPX_K_PRESOL"] = 327, /* lp.presol */
+/** @const */LPX_K_BINARIZE = exports["LPX_K_BINARIZE"] = 328, /* lp.binarize */
+/** @const */LPX_K_USECUTS = exports["LPX_K_USECUTS"] = 329, /* lp.use_cuts */
+/** @const */LPX_K_BFTYPE = exports["LPX_K_BFTYPE"] = 330, /* lp.bfcp.type */
+/** @const */LPX_K_MIPGAP = exports["LPX_K_MIPGAP"] = 331, /* lp.mip_gap */
+
+/** @const */LPX_C_COVER = exports["LPX_C_COVER"] = 0x01, /* mixed cover cuts */
+/** @const */LPX_C_CLIQUE = exports["LPX_C_CLIQUE"] = 0x02, /* clique cuts */
+/** @const */LPX_C_GOMORY = exports["LPX_C_GOMORY"] = 0x04, /* Gomory's mixed integer cuts */
+/** @const */LPX_C_MIR = exports["LPX_C_MIR"] = 0x08, /* mixed integer rounding cuts */
+/** @const */LPX_C_ALL = exports["LPX_C_ALL"] = 0xFF;
 function lpx_create_prob(){
     /* create problem object */
     return glp_create_prob();
@@ -14218,7 +14217,7 @@ function lpx_get_ray_info(lp){
 function lpx_check_kkt(lp, scaled, kkt){
     /* check Karush-Kuhn-Tucker conditions */
     xassert(scaled == scaled);
-    _glp_check_kkt(lp, GLP_SOL, GLP_KKT_PE,
+    glp_check_kkt(lp, GLP_SOL, GLP_KKT_PE,
         function(ae_max, ae_ind, re_max, re_ind){
             kkt.pe_ae_max = ae_max;
             kkt.pe_ae_row = ae_ind;
@@ -14235,7 +14234,7 @@ function lpx_check_kkt(lp, scaled, kkt){
         }
     );
 
-    _glp_check_kkt(lp, GLP_SOL, GLP_KKT_PB,
+    glp_check_kkt(lp, GLP_SOL, GLP_KKT_PB,
         function(ae_max, ae_ind, re_max, re_ind){
             kkt.pb_ae_max = ae_max;
             kkt.pb_ae_ind = ae_ind;
@@ -14252,7 +14251,7 @@ function lpx_check_kkt(lp, scaled, kkt){
         }
     );
 
-    _glp_check_kkt(lp, GLP_SOL, GLP_KKT_DE,
+    glp_check_kkt(lp, GLP_SOL, GLP_KKT_DE,
         function(ae_max, ae_ind, re_max, re_ind){
             kkt.de_ae_max = ae_max;
             if (ae_ind == 0)
@@ -14275,7 +14274,7 @@ function lpx_check_kkt(lp, scaled, kkt){
         }
     );
 
-    _glp_check_kkt(lp, GLP_SOL, GLP_KKT_DB,
+    glp_check_kkt(lp, GLP_SOL, GLP_KKT_DB,
         function(ae_max, ae_ind, re_max, re_ind){
             kkt.db_ae_max = ae_max;
             kkt.db_ae_ind = ae_ind;
@@ -14536,7 +14535,7 @@ function lpx_mip_col_val(lp, j){
 
 function lpx_check_int(lp, kkt){
     /* check integer feasibility conditions */
-    _glp_check_kkt(lp, GLP_MIP, GLP_KKT_PE,
+    glp_check_kkt(lp, GLP_MIP, GLP_KKT_PE,
         function(ae_max, ae_ind, re_max, re_ind){
             kkt.pe_ae_max = ae_max;
             kkt.pe_ae_row = ae_ind;
@@ -14553,7 +14552,7 @@ function lpx_check_int(lp, kkt){
         }
     );
 
-    _glp_check_kkt(lp, GLP_MIP, GLP_KKT_PB,
+    glp_check_kkt(lp, GLP_MIP, GLP_KKT_PB,
         function(ae_max, ae_ind, re_max, re_ind){
             kkt.pb_ae_max = ae_max;
             kkt.pb_ae_ind = ae_ind;
