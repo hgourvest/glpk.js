@@ -10171,7 +10171,7 @@ function ios_mir_gen(tree, mir){
             mir.x[k] = mip.col[k-m].prim;
     }
 
-    if (_MIR_DEBUG){
+    //if (_MIR_DEBUG){
         function check_current_point(mir){
             /* check current point */
             var m = mir.m;
@@ -10209,7 +10209,7 @@ function ios_mir_gen(tree, mir){
                 }
             }
         }
-    }
+    //}
 
     function initial_agg_row(tree, mir, i){
         /* use original i-th row as initial aggregated constraint */
@@ -10235,7 +10235,7 @@ function ios_mir_gen(tree, mir){
         }
     }
 
-    if (_MIR_DEBUG){
+    //if (_MIR_DEBUG){
         function check_agg_row(mir)
         {     /* check aggregated constraint */
             var m = mir.m;
@@ -10258,7 +10258,7 @@ function ios_mir_gen(tree, mir){
             /* the residual must be close to zero */
             xassert(Math.abs(r) <= 1e-6 * big);
         }
-    }
+    //}
 
     function subst_fixed_vars(mir){
         /* substitute fixed variables into aggregated constraint */
@@ -10423,7 +10423,7 @@ function ios_mir_gen(tree, mir){
         }
     }
 
-    if (_MIR_DEBUG){
+    //if (_MIR_DEBUG){
         function check_mod_row(mir){
             /* check modified constraint */
             var m = mir.m;
@@ -10466,7 +10466,7 @@ function ios_mir_gen(tree, mir){
             /* the residual must be close to zero */
             xassert(Math.abs(r) <= 1e-6 * big);
         }
-    }
+    //}
 
     function generate(mir){
         /* try to generate violated c-MIR cut for modified constraint */
@@ -10589,7 +10589,7 @@ function ios_mir_gen(tree, mir){
         return r_best;
     }
 
-    if (_MIR_DEBUG){
+    //if (_MIR_DEBUG){
         function check_raw_cut(mir, r_best){
             /* check raw cut before back bound substitution */
             var m = mir.m;
@@ -10630,7 +10630,7 @@ function ios_mir_gen(tree, mir){
             /* the residual must be close to r_best */
             xassert(Math.abs(r - r_best) <= 1e-6 * big);
         }
-    }
+    //}
 
     function back_subst(mir){
         /* back substitution of original bounds */
@@ -10716,7 +10716,7 @@ function ios_mir_gen(tree, mir){
         }
     }
 
-    if (_MIR_DEBUG){
+    //if (_MIR_DEBUG){
         function check_cut_row(mir, r_best){
             /* check the cut after back bound substitution or elimination of
              auxiliary variables */
@@ -10740,7 +10740,7 @@ function ios_mir_gen(tree, mir){
             /* the residual must be close to r_best */
             xassert(Math.abs(r - r_best) <= 1e-6 * big);
         }
-    }
+    //}
 
     function subst_aux_vars(tree, mir){
         /* final substitution to eliminate auxiliary variables */
@@ -33235,6 +33235,50 @@ function spx_dual(lp, parm){
         return csa;
     }
 
+    this["chrome_workaround_1"] = function(csa, lp){
+        var A_ptr = csa.A_ptr;
+        var A_ind = csa.A_ind;
+        var A_val = csa.A_val;
+        var n = csa.n;
+        var aij, loc, j;
+        /* matrix A (by columns) */
+        loc = 1;
+        for (j = 1; j <= n; j++)
+        {
+            A_ptr[j] = loc;
+            for (aij = lp.col[j].ptr; aij != null; aij = aij.c_next)
+            {  A_ind[loc] = aij.row.i;
+                A_val[loc] = aij.row.rii * aij.val * aij.col.sjj;
+                loc++;
+            }
+        }
+        A_ptr[n+1] = loc;
+        xassert(loc-1 == lp.nnz);
+    };
+
+    this["chrome_workaround_2"] = function(csa, lp){
+        var loc, i, aij;
+        var AT_ptr = csa.AT_ptr;
+        var AT_ind = csa.AT_ind;
+        var AT_val = csa.AT_val;
+        var m = csa.m;
+
+        /* matrix A (by rows) */
+        loc = 1;
+        for (i = 1; i <= m; i++)
+        {
+            AT_ptr[i] = loc;
+            for (aij = lp.row[i].ptr; aij != null; aij = aij.r_next)
+            {  AT_ind[loc] = aij.col.j;
+                AT_val[loc] = aij.row.rii * aij.val * aij.col.sjj;
+                loc++;
+            }
+        }
+        AT_ptr[m+1] = loc;
+        xassert(loc-1 == lp.nnz);
+
+    };
+
     function init_csa(csa, lp){
         var m = csa.m;
         var n = csa.n;
@@ -33246,12 +33290,7 @@ function spx_dual(lp, parm){
         var orig_lb = csa.orig_lb;
         var orig_ub = csa.orig_ub;
         var obj = csa.obj;
-        var A_ptr = csa.A_ptr;
-        var A_ind = csa.A_ind;
-        var A_val = csa.A_val;
-        var AT_ptr = csa.AT_ptr;
-        var AT_ind = csa.AT_ind;
-        var AT_val = csa.AT_val;
+
         var head = csa.head;
         var bind = csa.bind;
         var stat = csa.stat;
@@ -33300,32 +33339,10 @@ function spx_dual(lp, parm){
         if (Math.abs(csa.zeta) < 1.0) csa.zeta *= 1000.0;
         /* scale working objective coefficients */
         for (j = 1; j <= n; j++) coef[m+j] *= csa.zeta;
-        /* matrix A (by columns) */
-        loc = 1;
-        for (j = 1; j <= n; j++)
-        {
-            A_ptr[j] = loc;
-            for (aij = lp.col[j].ptr; aij != null; aij = aij.c_next)
-            {  A_ind[loc] = aij.row.i;
-                A_val[loc] = aij.row.rii * aij.val * aij.col.sjj;
-                loc++;
-            }
-        }
-        A_ptr[n+1] = loc;
-        xassert(loc-1 == lp.nnz);
-        /* matrix A (by rows) */
-        loc = 1;
-        for (i = 1; i <= m; i++)
-        {
-            AT_ptr[i] = loc;
-            for (aij = lp.row[i].ptr; aij != null; aij = aij.r_next)
-            {  AT_ind[loc] = aij.col.j;
-                AT_val[loc] = aij.row.rii * aij.val * aij.col.sjj;
-                loc++;
-            }
-        }
-        AT_ptr[m+1] = loc;
-        xassert(loc-1 == lp.nnz);
+
+        chrome_workaround_1(csa, lp);
+        chrome_workaround_2(csa, lp);
+
         /* basis header */
         xassert(lp.valid);
         xcopyArr(head, 1, lp.head, 1, m);
