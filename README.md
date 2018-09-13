@@ -2,5 +2,4 @@
 
 GNU Linear Programming Kit for Javascript
 
-[Live demo][demo]
-[demo]: http://hgourvest.github.io/glpk.js/
+[Live demo](http://hgourvest.github.io/glpk.js/)
